@@ -8,13 +8,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 
+import 'package:figma_worknest/api_client.dart';
 import 'package:figma_worknest/main.dart';
 
 void main() {
   testWidgets('dashboard renders primary workday controls', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WorknestApp());
+    await tester.pumpWidget(WorknestApp(api: _FakeApiClient()));
 
     await tester.enterText(
       find.byType(TextFormField).at(0),
@@ -28,4 +29,17 @@ void main() {
     expect(find.text('Working time'), findsOneWidget);
     expect(find.text('Clock out'), findsOneWidget);
   });
+}
+
+class _FakeApiClient extends HrmApiClient {
+  @override
+  Future<AuthSession> login(String email, String password) async {
+    return const AuthSession(
+      accessToken: 'test-access',
+      refreshToken: 'test-refresh',
+      email: 'alex@company.com',
+      roles: ['hr manager'],
+      permissions: [],
+    );
+  }
 }

@@ -1,20 +1,30 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'api_client.dart';
 
 void main() {
   runApp(const WorknestApp());
 }
 
 class WorknestApp extends StatefulWidget {
-  const WorknestApp({super.key});
+  const WorknestApp({super.key, this.api});
+
+  final HrmApiClient? api;
 
   @override
   State<WorknestApp> createState() => _WorknestAppState();
 }
 
 class _WorknestAppState extends State<WorknestApp> {
-  bool _authenticated = false;
+  late final HrmApiClient _api;
+  AuthSession? _session;
+
+  @override
+  void initState() {
+    super.initState();
+    _api = widget.api ?? HrmApiClient();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,21 +94,32 @@ class _WorknestAppState extends State<WorknestApp> {
               ),
         ),
       ),
-      home: _authenticated
+      home: _session != null
           ? DashboardPage(
-              onLogout: () => setState(() => _authenticated = false),
+              session: _session!,
+              api: _api,
+              onLogout: () async {
+                await _api.logout();
+                if (mounted) setState(() => _session = null);
+              },
             )
           : LoginPage(
-              onAuthenticated: () => setState(() => _authenticated = true),
+              api: _api,
+              onAuthenticated: (session) => setState(() => _session = session),
             ),
     );
   }
 }
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.onAuthenticated});
+  const LoginPage({
+    super.key,
+    required this.api,
+    required this.onAuthenticated,
+  });
 
-  final VoidCallback onAuthenticated;
+  final HrmApiClient api;
+  final ValueChanged<AuthSession> onAuthenticated;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -110,6 +131,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isSubmitting = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -120,11 +142,35 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSubmitting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-    widget.onAuthenticated();
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+    try {
+      final session = await widget.api.login(
+        _emailController.text,
+        _passwordController.text,
+      );
+      if (mounted) widget.onAuthenticated(session);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _errorMessage = error.message);
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              'The API took too long to respond. Please try again in a moment.';
+        });
+      }
+    } on Exception {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              'Could not reach the HR API. Check your connection and try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -243,6 +289,17 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      if (_errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: Color(0xFFB05B68),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
@@ -361,8 +418,15 @@ class _RolePolicy {
 }
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key, required this.onLogout});
+  const DashboardPage({
+    super.key,
+    required this.api,
+    required this.session,
+    required this.onLogout,
+  });
 
+  final HrmApiClient api;
+  final AuthSession session;
   final VoidCallback onLogout;
 
   @override
@@ -371,7 +435,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
-  _Role _role = _Role.hrManager;
+  late _Role _role;
   bool _isClockedIn = true;
   bool _breakStarted = false;
   Duration _worked = const Duration(hours: 6, minutes: 24, seconds: 18);
@@ -445,11 +509,21 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    _role = _roleFromApi(widget.session.roles);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_isClockedIn && !_breakStarted && mounted) {
         setState(() => _worked += const Duration(seconds: 1));
       }
     });
+  }
+
+  static _Role _roleFromApi(List<String> roles) {
+    final normalized = roles.map((role) => role.toLowerCase()).toList();
+    if (normalized.contains('super admin')) return _Role.superAdmin;
+    if (normalized.contains('hr manager')) return _Role.hrManager;
+    if (normalized.contains('payroll officer')) return _Role.payrollOfficer;
+    if (normalized.contains('department manager')) return _Role.departmentManager;
+    return _Role.employee;
   }
 
   @override
@@ -488,10 +562,6 @@ class _DashboardPageState extends State<DashboardPage> {
                     selectedIndex: _selectedIndex,
                     role: _role,
                     onLogout: widget.onLogout,
-                    onRoleChanged: (role) => setState(() {
-                      _role = role;
-                      _selectedIndex = 0;
-                    }),
                     onSelected: (index) {
                       setState(() => _selectedIndex = index);
                       Navigator.of(context).pop();
@@ -507,10 +577,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   selectedIndex: _selectedIndex,
                   role: _role,
                   onLogout: widget.onLogout,
-                  onRoleChanged: (role) => setState(() {
-                    _role = role;
-                    _selectedIndex = 0;
-                  }),
                   onSelected: (index) => setState(() => _selectedIndex = index),
                 ),
               Expanded(
@@ -582,7 +648,10 @@ class _DashboardPageState extends State<DashboardPage> {
                               ? _ReportsContent(onAction: _showMessage)
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.roles
-                              ? _RoleManagementContent(onAction: _showMessage)
+                              ? _RoleManagementContent(
+                                  api: widget.api,
+                                  onAction: _showMessage,
+                                )
                               : _ModulePlaceholder(
                                   title: _navigation[_selectedIndex].label,
                                   icon: _navigation[_selectedIndex].icon,
@@ -653,7 +722,6 @@ class _Sidebar extends StatelessWidget {
     required this.selectedIndex,
     required this.role,
     required this.onLogout,
-    required this.onRoleChanged,
     required this.onSelected,
   });
 
@@ -661,7 +729,6 @@ class _Sidebar extends StatelessWidget {
   final int selectedIndex;
   final _Role role;
   final VoidCallback onLogout;
-  final ValueChanged<_Role> onRoleChanged;
   final ValueChanged<int> onSelected;
 
   @override
@@ -697,23 +764,7 @@ class _Sidebar extends StatelessWidget {
               onTap: () => onSelected(index),
             ),
           const Spacer(),
-          PopupMenuButton<_Role>(
-            initialValue: role,
-            onSelected: onRoleChanged,
-            tooltip: 'Switch role',
-            color: Colors.white,
-            itemBuilder: (context) => _Role.values
-                .map(
-                  (item) => PopupMenuItem(
-                    value: item,
-                    child: Text(
-                      item.label,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                )
-                .toList(),
-            child: Padding(
+          Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 8, 14),
               child: Row(
                 children: [
@@ -749,7 +800,6 @@ class _Sidebar extends StatelessWidget {
                 ],
               ),
             ),
-          ),
           if (_RolePolicy.can(role, _Permission.manageCompany))
             _SidebarItem(
               item: const _NavItem(
@@ -1800,8 +1850,10 @@ class _WorkingTimeCard extends StatelessWidget {
             runSpacing: 10,
             children: [
               _ActionButton(
-                icon: Icons.pause_rounded,
-                label: 'Take a break',
+                icon: breakStarted
+                    ? Icons.play_arrow_rounded
+                    : Icons.pause_rounded,
+                label: breakStarted ? 'End break' : 'Take a break',
                 onPressed: onBreakToggle,
                 outlined: true,
               ),
@@ -2379,9 +2431,86 @@ class _EmployeeManagementContent extends StatelessWidget {
   }
 }
 
-class _RoleManagementContent extends StatelessWidget {
-  const _RoleManagementContent({required this.onAction});
+class _RoleManagementContent extends StatefulWidget {
+  const _RoleManagementContent({
+    required this.api,
+    required this.onAction,
+  });
+
+  final HrmApiClient api;
   final ValueChanged<String> onAction;
+
+  @override
+  State<_RoleManagementContent> createState() => _RoleManagementContentState();
+}
+
+class _RoleManagementContentState extends State<_RoleManagementContent> {
+  List<ApiRole> _roles = const [];
+  List<ApiUser> _users = const [];
+  String? _error;
+  String? _updatingUserId;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await Future.wait([
+        widget.api.listRoles(),
+        widget.api.listUsers(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _roles = result[0] as List<ApiRole>;
+        _users = result[1] as List<ApiUser>;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (mounted) setState(() { _error = error.message; _loading = false; });
+    }
+  }
+
+  Future<void> _changeRole(ApiUser user, ApiRole nextRole) async {
+    if (_updatingUserId != null) return;
+    setState(() => _updatingUserId = user.id);
+    try {
+      final currentRoles = user.roles
+          .map((name) => _roles.where(
+                (role) => role.name.toLowerCase() == name.toLowerCase(),
+              ).firstOrNull)
+          .whereType<ApiRole>()
+          .toList();
+
+      for (final currentRole in currentRoles) {
+        if (currentRole.id != nextRole.id &&
+            currentRole.name.toLowerCase() != 'user') {
+          await widget.api.removeRole(user.id, currentRole.id);
+        }
+      }
+
+      final alreadyHasNextRole = currentRoles.any(
+        (role) => role.id == nextRole.id,
+      );
+      if (!alreadyHasNextRole) {
+        await widget.api.assignRole(user.id, nextRole.id);
+      }
+
+      widget.onAction('${user.email} is now assigned ${nextRole.name}.');
+      await _load();
+    } on ApiException catch (error) {
+      if (mounted) widget.onAction(error.message);
+    } finally {
+      if (mounted) setState(() => _updatingUserId = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2390,51 +2519,66 @@ class _RoleManagementContent extends StatelessWidget {
       subtitle:
           'Assign access according to each person’s job responsibilities.',
       action: FilledButton.icon(
-        onPressed: () => onAction('Invite employee opened.'),
+        onPressed: () => widget.onAction(
+          'Account invitations are managed by the API registration flow.',
+        ),
         icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
         label: const Text('Invite employee'),
       ),
       children: [
         _Panel(
           title: 'People and access',
-          child: Column(
-            children: [
-              for (final person in const [
-                ('Alex Morgan', 'alex@company.com', _Role.hrManager),
-                ('Ava Thompson', 'ava@company.com', _Role.departmentManager),
-                ('Maya Chen', 'maya@company.com', _Role.employee),
-                ('Noah Williams', 'noah@company.com', _Role.payrollOfficer),
-              ])
-                _RoleAssignmentRow(
-                  name: person.$1,
-                  email: person.$2,
-                  role: person.$3,
-                  onChanged: (role) =>
-                      onAction('${person.$1} is now ${role.label}.'),
-                ),
-            ],
-          ),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_error!),
+                        const SizedBox(height: 10),
+                        OutlinedButton(onPressed: _load, child: const Text('Retry')),
+                      ],
+                    )
+                  : _users.isEmpty
+                      ? const Text('No accounts were returned by the API.')
+                      : Column(
+                          children: [
+                            for (final user in _users)
+                              _ApiRoleAssignmentRow(
+                                user: user,
+                                roles: _roles,
+                                updating: _updatingUserId == user.id,
+                                onChanged: (role) => _changeRole(user, role),
+                              ),
+                          ],
+                        ),
         ),
       ],
     );
   }
 }
 
-class _RoleAssignmentRow extends StatelessWidget {
-  const _RoleAssignmentRow({
-    required this.name,
-    required this.email,
-    required this.role,
+class _ApiRoleAssignmentRow extends StatelessWidget {
+  const _ApiRoleAssignmentRow({
+    required this.user,
+    required this.roles,
+    required this.updating,
     required this.onChanged,
   });
 
-  final String name;
-  final String email;
-  final _Role role;
-  final ValueChanged<_Role> onChanged;
+  final ApiUser user;
+  final List<ApiRole> roles;
+  final bool updating;
+  final ValueChanged<ApiRole> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final current = user.roles
+        .where((name) => name.toLowerCase() != 'user')
+        .firstOrNull
+        ?.toLowerCase() ??
+        (user.roles.isEmpty ? null : 'user');
+    final selected = roles.where((role) => role.name.toLowerCase() == current).firstOrNull;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
@@ -2442,54 +2586,40 @@ class _RoleAssignmentRow extends StatelessWidget {
           const CircleAvatar(
             radius: 17,
             backgroundColor: Color(0xFFDCEAE8),
-            child: Icon(
-              Icons.person_outline,
-              size: 18,
-              color: Color(0xFF103A48),
-            ),
+            child: Icon(Icons.person_outline, size: 18, color: Color(0xFF103A48)),
           ),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF41555D),
-                  ),
-                ),
+                Text(user.email, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
-                Text(
-                  email,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFF8A999E),
-                  ),
-                ),
+                Text(user.status, style: const TextStyle(fontSize: 10, color: Color(0xFF8A999E))),
               ],
             ),
           ),
-          DropdownButton<_Role>(
-            value: role,
+          DropdownButton<ApiRole>(
+            value: selected,
+            hint: const Text('Select role', style: TextStyle(fontSize: 11)),
             underline: const SizedBox(),
-            items: _Role.values
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: item,
-                    child: Text(
-                      item.label,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (nextRole) {
-              if (nextRole != null) onChanged(nextRole);
+            items: roles.map((role) => DropdownMenuItem(
+              value: role,
+              child: Text(role.name, style: const TextStyle(fontSize: 11)),
+            )).toList(),
+            onChanged: updating ? null : (role) {
+              if (role != null) onChanged(role);
             },
           ),
+          if (updating)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: SizedBox(
+                width: 15,
+                height: 15,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
         ],
       ),
     );
