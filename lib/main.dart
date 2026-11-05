@@ -305,6 +305,17 @@ enum _Permission {
   selfService,
 }
 
+enum _NavPage {
+  overview,
+  employees,
+  calendar,
+  leaveRequests,
+  team,
+  reports,
+  roles,
+  payroll,
+}
+
 class _RolePolicy {
   static const Map<_Role, Set<_Permission>> permissions = {
     _Role.superAdmin: {
@@ -366,15 +377,54 @@ class _DashboardPageState extends State<DashboardPage> {
   Timer? _timer;
 
   final _allNavigation = const [
-    _NavItem(Icons.grid_view_rounded, 'Overview', _Permission.viewDashboard),
-    _NavItem(Icons.people_alt_outlined, 'Team', _Permission.manageTeam),
+    _NavItem(
+      Icons.grid_view_rounded,
+      'Overview',
+      _Permission.viewDashboard,
+      _NavPage.overview,
+    ),
+    _NavItem(
+      Icons.badge_outlined,
+      'Employee management',
+      _Permission.manageEmployees,
+      _NavPage.employees,
+    ),
     _NavItem(
       Icons.event_available_outlined,
-      'Attendance',
+      'Calendar',
       _Permission.manageAttendance,
+      _NavPage.calendar,
     ),
-    _NavItem(Icons.receipt_long_outlined, 'Time off', _Permission.manageLeave),
-    _NavItem(Icons.bar_chart_outlined, 'Reports', _Permission.manageReports),
+    _NavItem(
+      Icons.receipt_long_outlined,
+      'Leave requests',
+      _Permission.manageLeave,
+      _NavPage.leaveRequests,
+    ),
+    _NavItem(
+      Icons.people_alt_outlined,
+      'Team',
+      _Permission.manageTeam,
+      _NavPage.team,
+    ),
+    _NavItem(
+      Icons.bar_chart_outlined,
+      'Reports',
+      _Permission.manageReports,
+      _NavPage.reports,
+    ),
+    _NavItem(
+      Icons.admin_panel_settings_outlined,
+      'Role management',
+      _Permission.manageCompany,
+      _NavPage.roles,
+    ),
+    _NavItem(
+      Icons.payments_outlined,
+      'Payroll',
+      _Permission.managePayroll,
+      _NavPage.payroll,
+    ),
   ];
 
   List<_NavItem> get _navigation => _allNavigation
@@ -469,7 +519,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             compact ? 20 : 32,
                             28,
                           ),
-                          child: _selectedIndex == 0
+                          child:
+                              _navigation[_selectedIndex].page ==
+                                  _NavPage.overview
                               ? _DashboardContent(
                                   compact: compact,
                                   worked: _formatDuration(_worked),
@@ -497,14 +549,26 @@ class _DashboardPageState extends State<DashboardPage> {
                                   },
                                   onAction: _showMessage,
                                 )
-                              : _selectedIndex == 1
-                              ? _TeamContent(onAction: _showMessage)
-                              : _selectedIndex == 2
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.employees
+                              ? _EmployeeManagementContent(
+                                  onAction: _showMessage,
+                                )
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.calendar
                               ? _AttendanceContent(onAction: _showMessage)
-                              : _selectedIndex == 3
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.leaveRequests
                               ? _TimeOffContent(onAction: _showMessage)
-                              : _selectedIndex == 4
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.team
+                              ? _TeamContent(onAction: _showMessage)
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.reports
                               ? _ReportsContent(onAction: _showMessage)
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.roles
+                              ? _RoleManagementContent(onAction: _showMessage)
                               : _ModulePlaceholder(
                                   title: _navigation[_selectedIndex].label,
                                   icon: _navigation[_selectedIndex].icon,
@@ -678,6 +742,7 @@ class _Sidebar extends StatelessWidget {
                 Icons.settings_outlined,
                 'Settings',
                 _Permission.manageCompany,
+                _NavPage.roles,
               ),
               onTap: () {},
             ),
@@ -686,6 +751,7 @@ class _Sidebar extends StatelessWidget {
               Icons.logout_rounded,
               'Sign out',
               _Permission.selfService,
+              _NavPage.overview,
             ),
             onTap: onLogout,
           ),
@@ -694,6 +760,7 @@ class _Sidebar extends StatelessWidget {
               Icons.help_outline_rounded,
               'Help center',
               _Permission.selfService,
+              _NavPage.overview,
             ),
             onTap: () {},
           ),
@@ -977,112 +1044,210 @@ class _TeamContent extends StatelessWidget {
   }
 }
 
-class _AttendanceCalendar extends StatelessWidget {
+enum _AttendanceStatus { present, absent, leave }
+
+class _DayAttendance {
+  const _DayAttendance(this.day, this.entries);
+
+  final int day;
+  final Map<_AttendanceStatus, List<String>> entries;
+
+  bool get isFuture => day > 18;
+
+  List<String> namesFor(_AttendanceStatus status) =>
+      entries[status] ?? const [];
+}
+
+class _AttendanceCalendar extends StatefulWidget {
   const _AttendanceCalendar();
 
+  @override
+  State<_AttendanceCalendar> createState() => _AttendanceCalendarState();
+}
+
+class _AttendanceCalendarState extends State<_AttendanceCalendar> {
+  int _year = 2026;
+  int _month = 11;
+
   static const _weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  static const _days = [
+    _DayAttendance(1, {
+      _AttendanceStatus.present: ['Maya Chen', 'Liam Patel'],
+      _AttendanceStatus.absent: ['Noah Williams'],
+    }),
+    _DayAttendance(2, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Maya Chen'],
+      _AttendanceStatus.leave: ['Liam Patel'],
+    }),
+    _DayAttendance(3, {
+      _AttendanceStatus.present: ['Noah Williams', 'Ava Thompson'],
+      _AttendanceStatus.absent: ['Liam Patel'],
+    }),
+    _DayAttendance(4, {
+      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams'],
+    }),
+    _DayAttendance(5, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
+      _AttendanceStatus.leave: ['Maya Chen'],
+    }),
+    _DayAttendance(6, {
+      _AttendanceStatus.present: ['Noah Williams', 'Maya Chen'],
+    }),
+    _DayAttendance(7, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
+      _AttendanceStatus.absent: ['Maya Chen'],
+    }),
+    _DayAttendance(8, {
+      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams'],
+    }),
+    _DayAttendance(9, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
+      _AttendanceStatus.leave: ['Noah Williams'],
+    }),
+    _DayAttendance(10, {
+      _AttendanceStatus.present: ['Maya Chen', 'Ava Thompson'],
+      _AttendanceStatus.absent: ['Liam Patel'],
+    }),
+    _DayAttendance(11, {
+      _AttendanceStatus.present: ['Noah Williams', 'Liam Patel'],
+    }),
+    _DayAttendance(12, {
+      _AttendanceStatus.present: ['Maya Chen', 'Ava Thompson'],
+      _AttendanceStatus.leave: ['Noah Williams'],
+    }),
+    _DayAttendance(13, {
+      _AttendanceStatus.present: ['Liam Patel', 'Noah Williams'],
+    }),
+    _DayAttendance(14, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Maya Chen'],
+      _AttendanceStatus.absent: ['Liam Patel'],
+    }),
+    _DayAttendance(15, {
+      _AttendanceStatus.present: ['Noah Williams', 'Maya Chen'],
+    }),
+    _DayAttendance(16, {
+      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
+      _AttendanceStatus.leave: ['Noah Williams'],
+    }),
+    _DayAttendance(17, {
+      _AttendanceStatus.present: ['Maya Chen', 'Liam Patel'],
+    }),
+    _DayAttendance(18, {
+      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams', 'Liam Patel'],
+      _AttendanceStatus.leave: ['Ava Thompson'],
+    }),
+    _DayAttendance(19, {
+      _AttendanceStatus.leave: ['Ava Thompson'],
+    }),
+    _DayAttendance(20, {
+      _AttendanceStatus.leave: ['Noah Williams', 'Ava Thompson'],
+    }),
+    _DayAttendance(21, {}),
+    _DayAttendance(22, {
+      _AttendanceStatus.leave: ['Maya Chen'],
+    }),
+    _DayAttendance(23, {}),
+    _DayAttendance(24, {
+      _AttendanceStatus.leave: ['Liam Patel'],
+    }),
+    _DayAttendance(25, {}),
+    _DayAttendance(26, {}),
+    _DayAttendance(27, {}),
+    _DayAttendance(28, {}),
+    _DayAttendance(29, {}),
+    _DayAttendance(30, {}),
+  ];
 
-  _CalendarDay _day(int day) {
-    final future = day > 18;
-    if (future) {
-      final leave = switch (day) {
-        20 => const ['Ava Thompson', 'Maya Chen'],
-        24 => const ['Noah Williams'],
-        _ => <String>[],
-      };
-      return _CalendarDay(day: day, leave: leave);
-    }
+  String get _monthLabel => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ][_month - 1];
 
-    final present = switch (day) {
-      1 ||
-      2 ||
-      3 ||
-      4 ||
-      5 ||
-      6 ||
-      9 ||
-      10 ||
-      11 ||
-      12 ||
-      13 ||
-      16 ||
-      17 ||
-      18 => const ['Maya Chen', 'Noah Williams', 'Liam Patel'],
-      _ => const ['Maya Chen', 'Liam Patel'],
-    };
-    final absent = day == 7 || day == 14
-        ? const ['Liam Patel']
-        : const <String>[];
-    final leave = day == 12 ? const ['Ava Thompson'] : const <String>[];
-    return _CalendarDay(
-      day: day,
-      present: present,
-      absent: absent,
-      leave: leave,
-    );
-  }
+  bool get _isCurrentPeriod => _year == 2026 && _month == 11;
 
-  void _showDetails(BuildContext context, _CalendarDay data) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('November ${data.day}, 2026'),
-        content: SizedBox(
-          width: 340,
-          child: data.hasStatus
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (data.present.isNotEmpty)
-                      _StatusDetails(
-                        label: 'Present',
-                        color: const Color(0xFF55B89D),
-                        names: data.present,
-                      ),
-                    if (data.absent.isNotEmpty)
-                      _StatusDetails(
-                        label: 'Absent',
-                        color: const Color(0xFFD97986),
-                        names: data.absent,
-                      ),
-                    if (data.leave.isNotEmpty)
-                      _StatusDetails(
-                        label: 'Leave',
-                        color: const Color(0xFFE7C46A),
-                        names: data.leave,
-                      ),
-                  ],
-                )
-              : const Text(
-                  'No attendance record. Future dates show approved leave only.',
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
+  List<_DayAttendance> get _visibleDays {
+    final count = DateTime(_year, _month + 1, 0).day;
+    if (_isCurrentPeriod) return _days;
+    return List.generate(count, (index) {
+      final day = index + 1;
+      final seed = day + _month + _year;
+      final names = const [
+        'Maya Chen',
+        'Noah Williams',
+        'Ava Thompson',
+        'Liam Patel',
+      ];
+      final entries = <_AttendanceStatus, List<String>>{
+        _AttendanceStatus.present: [
+          names[seed % names.length],
+          names[(seed + 1) % names.length],
         ],
-      ),
-    );
+      };
+      if (seed % 5 == 0) {
+        entries[_AttendanceStatus.absent] = [names[(seed + 2) % names.length]];
+      } else if (seed % 4 == 0) {
+        entries[_AttendanceStatus.leave] = [names[(seed + 2) % names.length]];
+      }
+      return _DayAttendance(day, entries);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final dates = List.generate(30, (index) => index + 1);
     return _Panel(
       title: 'Attendance calendar',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'November 2026',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-              color: Color(0xFF41555D),
-            ),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Previous month',
+                onPressed: () => setState(() {
+                  if (_month == 1) {
+                    _month = 12;
+                    _year--;
+                  } else {
+                    _month--;
+                  }
+                }),
+                icon: const Icon(Icons.chevron_left_rounded, size: 19),
+                visualDensity: VisualDensity.compact,
+              ),
+              Expanded(
+                child: Text(
+                  '$_monthLabel $_year',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: Color(0xFF41555D),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next month',
+                onPressed: () => setState(() {
+                  if (_month == 12) {
+                    _month = 1;
+                    _year++;
+                  } else {
+                    _month++;
+                  }
+                }),
+                icon: const Icon(Icons.chevron_right_rounded, size: 19),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
           ),
           const SizedBox(height: 15),
           Row(
@@ -1106,69 +1271,25 @@ class _AttendanceCalendar extends StatelessWidget {
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: 35,
+            itemCount:
+                DateTime(_year, _month, 1).weekday % 7 + _visibleDays.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              childAspectRatio: 1.45,
+              childAspectRatio: 1.7,
             ),
             itemBuilder: (context, index) {
-              if (index >= dates.length) return const SizedBox.shrink();
-              final data = _day(dates[index]);
-              final details = data.tooltip;
-              return Tooltip(
-                message: details,
-                waitDuration: const Duration(milliseconds: 250),
-                child: InkWell(
-                  onTap: () => _showDetails(context, data),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Center(
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: data.day == 18
-                            ? const Color(0xFFDDF6EB)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: data.hasStatus
-                              ? const Color(0xFFE1E9EB)
-                              : Colors.transparent,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${data.day}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: data.day == 18
-                                  ? const Color(0xFF2A9A75)
-                                  : const Color(0xFF667980),
-                              fontWeight: data.day == 18
-                                  ? FontWeight.w800
-                                  : FontWeight.w500,
-                            ),
-                          ),
-                          if (data.hasStatus)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (data.present.isNotEmpty)
-                                  const _StatusDot(color: Color(0xFF55B89D)),
-                                if (data.absent.isNotEmpty)
-                                  const _StatusDot(color: Color(0xFFD97986)),
-                                if (data.leave.isNotEmpty)
-                                  const _StatusDot(color: Color(0xFFE7C46A)),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+              final offset = DateTime(_year, _month, 1).weekday % 7;
+              if (index < offset) return const SizedBox.shrink();
+              final dayIndex = index - offset;
+              if (dayIndex >= _visibleDays.length) {
+                return const SizedBox.shrink();
+              }
+              final day = _visibleDays[dayIndex];
+              return _AttendanceDayCell(
+                day: day,
+                future: _isCurrentPeriod && day.day > 18,
+                month: _month,
+                year: _year,
               );
             },
           ),
@@ -1177,14 +1298,10 @@ class _AttendanceCalendar extends StatelessWidget {
             spacing: 12,
             children: [
               _Legend(color: Color(0xFF55B89D), label: 'Present'),
-              _Legend(color: Color(0xFFD97986), label: 'Absent'),
               _Legend(color: Color(0xFFE7C46A), label: 'Leave'),
+              _Legend(color: Color(0xFFE58A8A), label: 'Absent'),
+              _Legend(color: Color(0xFFCAD5D8), label: 'Today'),
             ],
-          ),
-          const SizedBox(height: 7),
-          const Text(
-            'Hover a date for names. Click or tap for full day details.',
-            style: TextStyle(fontSize: 9, color: Color(0xFF8A999E)),
           ),
         ],
       ),
@@ -1192,84 +1309,195 @@ class _AttendanceCalendar extends StatelessWidget {
   }
 }
 
-class _CalendarDay {
-  const _CalendarDay({
+class _AttendanceDayCell extends StatelessWidget {
+  const _AttendanceDayCell({
     required this.day,
-    this.present = const [],
-    this.absent = const [],
-    this.leave = const [],
+    required this.future,
+    required this.month,
+    required this.year,
   });
-  final int day;
-  final List<String> present;
-  final List<String> absent;
-  final List<String> leave;
-  bool get hasStatus =>
-      present.isNotEmpty || absent.isNotEmpty || leave.isNotEmpty;
-  String get tooltip {
-    final sections = <String>[];
-    if (present.isNotEmpty) sections.add('Present: ${present.join(', ')}');
-    if (absent.isNotEmpty) sections.add('Absent: ${absent.join(', ')}');
-    if (leave.isNotEmpty) sections.add('Leave: ${leave.join(', ')}');
-    return sections.isEmpty ? 'No attendance record' : sections.join('\n');
+
+  final _DayAttendance day;
+  final bool future;
+  final int month;
+  final int year;
+
+  static const _colors = {
+    _AttendanceStatus.present: Color(0xFF55B89D),
+    _AttendanceStatus.absent: Color(0xFFE58A8A),
+    _AttendanceStatus.leave: Color(0xFFE7C46A),
+  };
+
+  String _tooltipText() {
+    final visibleEntries = future
+        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
+        : day.entries;
+    if (visibleEntries.values.every((names) => names.isEmpty)) {
+      return 'No attendance recorded';
+    }
+    return visibleEntries.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .map((entry) => '${_statusLabel(entry.key)}: ${entry.value.join(', ')}')
+        .join('\n');
   }
-}
 
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.color});
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 4,
-    height: 4,
-    margin: const EdgeInsets.symmetric(horizontal: 1),
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
-}
-
-class _StatusDetails extends StatelessWidget {
-  const _StatusDetails({
-    required this.label,
-    required this.color,
-    required this.names,
-  });
-  final String label;
-  final Color color;
-  final List<String> names;
+  static String _statusLabel(_AttendanceStatus status) {
+    switch (status) {
+      case _AttendanceStatus.present:
+        return 'Present';
+      case _AttendanceStatus.absent:
+        return 'Absent';
+      case _AttendanceStatus.leave:
+        return 'Leave';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final entries = future
+        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
+        : day.entries;
+    final hasData = entries.values.any((names) => names.isNotEmpty);
+    final isToday = day.day == 18;
+    final cell = Material(
+      color: isToday ? const Color(0xFFDDF6EB) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () => _showDayDetails(context),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
               Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isToday
+                      ? const Color(0xFF2A9A75)
+                      : const Color(0xFF667980),
+                  fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 3),
+              if (hasData)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: entries.entries
+                      .where((entry) => entry.value.isNotEmpty)
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                          child: Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: _colors[entry.key],
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                )
+              else
+                const SizedBox(height: 5),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            names.join(', '),
-            style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
+        ),
+      ),
+    );
+    return Tooltip(
+      message: _tooltipText(),
+      waitDuration: const Duration(milliseconds: 250),
+      child: cell,
+    );
+  }
+
+  void _showDayDetails(BuildContext context) {
+    final entries = future
+        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
+        : day.entries;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${_monthName(month)} ${day.day}, $year'),
+        content: SizedBox(
+          width: 360,
+          child: entries.values.every((names) => names.isEmpty)
+              ? const Text(
+                  'No attendance or approved leave recorded for this day.',
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: entries.entries
+                      .where((entry) => entry.value.isNotEmpty)
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: _colors[entry.key],
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _statusLabel(entry.key),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                entry.value.join(' • '),
+                                style: const TextStyle(
+                                  color: Color(0xFF60717A),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
+
+  String _monthName(int month) => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ][month - 1];
 }
 
 class _Legend extends StatelessWidget {
@@ -1907,6 +2135,8 @@ class _AttendanceContent extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 18),
+        const _AttendanceCalendar(),
+        const SizedBox(height: 18),
         _Panel(
           title: 'Today’s attendance',
           trailing: OutlinedButton.icon(
@@ -2021,6 +2251,183 @@ class _ReportsContent extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+class _EmployeeManagementContent extends StatelessWidget {
+  const _EmployeeManagementContent({required this.onAction});
+  final ValueChanged<String> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Workspace(
+      title: 'Employee management',
+      subtitle: 'Manage employee records, departments, and employment status.',
+      action: FilledButton.icon(
+        onPressed: () => onAction('New employee form opened.'),
+        icon: const Icon(Icons.add, size: 16),
+        label: const Text('Add employee'),
+      ),
+      children: [
+        _Panel(
+          title: 'Employees',
+          trailing: SizedBox(
+            width: 220,
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search employees',
+                prefixIcon: Icon(Icons.search, size: 17),
+                isDense: true,
+              ),
+              onChanged: (_) {},
+            ),
+          ),
+          child: const _EmployeeTable(
+            rows: [
+              [
+                'Maya Chen',
+                'Engineering',
+                'Product engineer',
+                'Active',
+                'Full time',
+              ],
+              ['Noah Williams', 'Design', 'UX designer', 'Active', 'Full time'],
+              [
+                'Ava Thompson',
+                'Product',
+                'Product designer',
+                'Active',
+                'Full time',
+              ],
+              [
+                'Liam Patel',
+                'Sales',
+                'Account executive',
+                'Inactive',
+                'Contract',
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoleManagementContent extends StatelessWidget {
+  const _RoleManagementContent({required this.onAction});
+  final ValueChanged<String> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Workspace(
+      title: 'Role management',
+      subtitle:
+          'Assign access according to each person’s job responsibilities.',
+      action: FilledButton.icon(
+        onPressed: () => onAction('Invite employee opened.'),
+        icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
+        label: const Text('Invite employee'),
+      ),
+      children: [
+        _Panel(
+          title: 'People and access',
+          child: Column(
+            children: [
+              for (final person in const [
+                ('Alex Morgan', 'alex@company.com', _Role.hrManager),
+                ('Ava Thompson', 'ava@company.com', _Role.departmentManager),
+                ('Maya Chen', 'maya@company.com', _Role.employee),
+                ('Noah Williams', 'noah@company.com', _Role.payrollOfficer),
+              ])
+                _RoleAssignmentRow(
+                  name: person.$1,
+                  email: person.$2,
+                  role: person.$3,
+                  onChanged: (role) =>
+                      onAction('${person.$1} is now ${role.label}.'),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoleAssignmentRow extends StatelessWidget {
+  const _RoleAssignmentRow({
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.onChanged,
+  });
+
+  final String name;
+  final String email;
+  final _Role role;
+  final ValueChanged<_Role> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 17,
+            backgroundColor: Color(0xFFDCEAE8),
+            child: Icon(
+              Icons.person_outline,
+              size: 18,
+              color: Color(0xFF103A48),
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF41555D),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  email,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A999E),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<_Role>(
+            value: role,
+            underline: const SizedBox(),
+            items: _Role.values
+                .map(
+                  (item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(
+                      item.label,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (nextRole) {
+              if (nextRole != null) onChanged(nextRole);
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2436,8 +2843,9 @@ class _ModulePlaceholder extends StatelessWidget {
 }
 
 class _NavItem {
-  const _NavItem(this.icon, this.label, this.permission);
+  const _NavItem(this.icon, this.label, this.permission, this.page);
   final IconData icon;
   final String label;
   final _Permission permission;
+  final _NavPage page;
 }
