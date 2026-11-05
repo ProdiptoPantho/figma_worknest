@@ -310,6 +310,7 @@ enum _NavPage {
   employees,
   calendar,
   leaveRequests,
+  myLeave,
   team,
   reports,
   roles,
@@ -402,6 +403,12 @@ class _DashboardPageState extends State<DashboardPage> {
       _NavPage.leaveRequests,
     ),
     _NavItem(
+      Icons.event_note_outlined,
+      'My leave',
+      _Permission.selfService,
+      _NavPage.myLeave,
+    ),
+    _NavItem(
       Icons.people_alt_outlined,
       'Team',
       _Permission.manageTeam,
@@ -428,7 +435,11 @@ class _DashboardPageState extends State<DashboardPage> {
   ];
 
   List<_NavItem> get _navigation => _allNavigation
-      .where((item) => _RolePolicy.can(_role, item.permission))
+      .where(
+        (item) =>
+            _RolePolicy.can(_role, item.permission) &&
+            (item.page != _NavPage.myLeave || _role == _Role.employee),
+      )
       .toList();
 
   @override
@@ -560,6 +571,9 @@ class _DashboardPageState extends State<DashboardPage> {
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.leaveRequests
                               ? _TimeOffContent(onAction: _showMessage)
+                              : _navigation[_selectedIndex].page ==
+                                    _NavPage.myLeave
+                              ? _MyLeaveContent(onAction: _showMessage)
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.team
                               ? _TeamContent(onAction: _showMessage)
@@ -2197,6 +2211,56 @@ class _TimeOffContent extends StatelessWidget {
             onChanged: (_) {},
           ),
           child: _RequestTable(onAction: onAction),
+        ),
+      ],
+    );
+  }
+}
+
+class _MyLeaveContent extends StatelessWidget {
+  const _MyLeaveContent({required this.onAction});
+  final ValueChanged<String> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Workspace(
+      title: 'My leave',
+      subtitle: 'Request time away and track your leave history.',
+      action: FilledButton.icon(
+        onPressed: () => onAction('New leave request opened.'),
+        icon: const Icon(Icons.add, size: 16),
+        label: const Text('Request leave'),
+      ),
+      children: [
+        const _SummaryRow(
+          items: [
+            _SummaryItem('Available balance', '12 days', Color(0xFFDDF6EB)),
+            _SummaryItem('Pending requests', '1', Color(0xFFFFF3D6)),
+            _SummaryItem('Used this year', '6 days', Color(0xFFE7EFFD)),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _Panel(
+          title: 'My leave history',
+          child: const _EmployeeTable(
+            rows: [
+              [
+                'Annual leave',
+                'Nov 16–17',
+                '2 days',
+                'Pending',
+                'Awaiting review',
+              ],
+              [
+                'Annual leave',
+                'Oct 7–10',
+                '4 days',
+                'Approved',
+                'Approved by HR',
+              ],
+              ['Sick leave', 'Sep 2', '1 day', 'Approved', 'Approved by HR'],
+            ],
+          ),
         ),
       ],
     );
