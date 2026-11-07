@@ -489,7 +489,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   String? _validateToken(String? value) {
     if ((value?.trim() ?? '').isEmpty) {
-      return 'Enter the reset code from your email';
+      return 'Enter the reset code';
     }
     return null;
   }
