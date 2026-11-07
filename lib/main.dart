@@ -1,16 +1,46 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'api_client.dart';
 
 void main() {
   runApp(const WorknestApp());
 }
 
+/// Email and token captured from a password-reset link.
+class PasswordResetLink {
+  const PasswordResetLink({required this.email, required this.token});
+
+  final String email;
+  final String token;
+}
+
+PasswordResetLink? _resetLinkFromUri(Uri uri) {
+  Uri? candidate;
+  if (uri.path.endsWith('/reset-password')) {
+    candidate = uri;
+  } else if (uri.fragment.contains('reset-password')) {
+    final fragment = uri.fragment;
+    candidate = Uri.tryParse(
+      fragment.startsWith('/') ? fragment : '/$fragment',
+    );
+  }
+  if (candidate == null) return null;
+
+  final token = candidate.queryParameters['token']?.trim() ?? '';
+  final email = candidate.queryParameters['email']?.trim() ?? '';
+  if (token.isEmpty || email.isEmpty) return null;
+  return PasswordResetLink(email: email, token: token);
+}
+
 class WorknestApp extends StatefulWidget {
-  const WorknestApp({super.key, this.api});
+  const WorknestApp({super.key, this.api, this.resetLink});
 
   final HrmApiClient? api;
+  final PasswordResetLink? resetLink;
 
   @override
   State<WorknestApp> createState() => _WorknestAppState();
@@ -19,11 +49,19 @@ class WorknestApp extends StatefulWidget {
 class _WorknestAppState extends State<WorknestApp> {
   late final HrmApiClient _api;
   AuthSession? _session;
+  PasswordResetLink? _pendingReset;
 
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? HrmApiClient();
+    _pendingReset = widget.resetLink ?? _resetLinkFromUri(Uri.base);
+    if (_pendingReset != null && kIsWeb) {
+      SystemNavigator.routeInformationUpdated(
+        uri: Uri.parse('${Uri.base.origin}/'),
+        replace: true,
+      );
+    }
   }
 
   @override
@@ -105,7 +143,11 @@ class _WorknestAppState extends State<WorknestApp> {
             )
           : LoginPage(
               api: _api,
-              onAuthenticated: (session) => setState(() => _session = session),
+              initialReset: _pendingReset,
+              onAuthenticated: (session) => setState(() {
+                _session = session;
+                _pendingReset = null;
+              }),
             ),
     );
   }
@@ -116,10 +158,12 @@ class LoginPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onAuthenticated,
+    this.initialReset,
   });
 
   final HrmApiClient api;
   final ValueChanged<AuthSession> onAuthenticated;
+  final PasswordResetLink? initialReset;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -132,6 +176,18 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
   bool _isSubmitting = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    final reset = widget.initialReset;
+    if (reset != null) {
+      _emailController.text = reset.email;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showForgotPassword(link: reset);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -164,13 +220,40 @@ class _LoginPageState extends State<LoginPage> {
     } on Exception {
       if (mounted) {
         setState(() {
-          _errorMessage =
-              'Could not reach the HR API. Check your connection and try again.';
+          _errorMessage = 'Could not reach the HR API. Check your connection and try again.';
         });
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _showForgotPassword({PasswordResetLink? link}) async {
+    final email = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _ForgotPasswordDialog(
+        api: widget.api,
+        initialEmail: link?.email ?? _emailController.text.trim(),
+        initialToken: link?.token ?? '',
+        startAtReset: link != null,
+      ),
+    );
+    if (email == null || !mounted) return;
+    setState(() {
+      _emailController.text = email;
+      _passwordController.clear();
+      _errorMessage = null;
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Password updated. Sign in with your new password.'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 4),
+        ),
+      );
   }
 
   @override
@@ -284,7 +367,7 @@ class _LoginPageState extends State<LoginPage> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {},
+                          onPressed: _isSubmitting ? null : _showForgotPassword,
                           child: const Text('Forgot password?'),
                         ),
                       ),
@@ -334,6 +417,429 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog({
+    required this.api,
+    required this.initialEmail,
+    required this.initialToken,
+    required this.startAtReset,
+  });
+
+  final HrmApiClient api;
+  final String initialEmail;
+  final String initialToken;
+  final bool startAtReset;
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  final _requestFormKey = GlobalKey<FormState>();
+  final _resetFormKey = GlobalKey<FormState>();
+  late final TextEditingController _emailController;
+  late final TextEditingController _tokenController;
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  late bool _resetStep;
+  bool _obscurePassword = true;
+  bool _obscureConfirmation = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+    _tokenController = TextEditingController(text: widget.initialToken);
+    _resetStep = widget.startAtReset && widget.initialToken.trim().isNotEmpty;
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _tokenController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+      return 'Enter a valid work email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if ((value?.length ?? 0) < 8) return 'Use at least 8 characters';
+    return null;
+  }
+
+  String? _validateConfirmation(String? value) {
+    if (value != _passwordController.text) return 'Passwords do not match';
+    return null;
+  }
+
+  String? _validateToken(String? value) {
+    if ((value?.trim() ?? '').isEmpty) {
+      return 'Enter the reset code from your email';
+    }
+    return null;
+  }
+
+  /// Accepts either the raw token or the full reset link from the email.
+  ({String email, String token}) _resetCredentials() {
+    final raw = _tokenController.text.trim();
+    if (raw.contains('token=')) {
+      final parsed = Uri.tryParse(raw);
+      if (parsed != null) {
+        final fragment = parsed.fragment;
+        final source = fragment.contains('token=')
+            ? Uri.tryParse(fragment.startsWith('/') ? fragment : '/$fragment')
+            : null;
+        final resolved = source ?? parsed;
+        final token = resolved.queryParameters['token']?.trim() ?? '';
+        if (token.isNotEmpty) {
+          return (
+            email:
+                resolved.queryParameters['email']?.trim() ??
+                _emailController.text.trim(),
+            token: token,
+          );
+        }
+      }
+    }
+    return (email: _emailController.text.trim(), token: raw);
+  }
+
+  Future<void> _requestReset() async {
+    if (!_requestFormKey.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.api.requestPasswordReset(_emailController.text);
+      if (mounted) {
+        setState(() {
+          _resetStep = true;
+          _busy = false;
+          _passwordController.clear();
+          _confirmController.clear();
+        });
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _busy = false;
+        });
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _error = 'The API took too long to respond. Please try again.';
+          _busy = false;
+        });
+      }
+    } on Exception {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not reach the HR API. Check your connection and try again.';
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (!_resetFormKey.currentState!.validate()) return;
+    final credentials = _resetCredentials();
+    if (credentials.token.isEmpty) {
+      setState(() => _error = 'Enter the reset code from your email.');
+      return;
+    }
+    _emailController.text = credentials.email;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.api.resetPassword(
+        email: credentials.email,
+        newPassword: _passwordController.text,
+        resetToken: credentials.token,
+      );
+      if (mounted) {
+        Navigator.of(context).pop(credentials.email);
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _busy = false;
+        });
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _error = 'The API took too long to respond. Please try again.';
+          _busy = false;
+        });
+      }
+    } on Exception {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not reach the HR API. Check your connection and try again.';
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
+      title: Row(
+        children: [
+          const Icon(
+            Icons.lock_reset_rounded,
+            color: Color(0xFF59CDB6),
+            size: 22,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              _resetStep ? 'Set a new password' : 'Reset your password',
+              style: const TextStyle(
+                color: Color(0xFF103A48),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: _resetStep ? _buildResetStep() : _buildRequestStep(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () {
+                  if (_resetStep) {
+                    setState(() {
+                      _resetStep = false;
+                      _error = null;
+                    });
+                  } else {
+                    Navigator.of(context).pop();
+                  }
+                },
+          child: Text(_resetStep ? 'Back' : 'Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy
+              ? null
+              : (_resetStep ? _resetPassword : _requestReset),
+          child: _busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(_resetStep ? 'Set new password' : 'Send reset link'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRequestStep() {
+    return Form(
+      key: _requestFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Enter the work email linked to your PeopleHub account.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF60717A),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 18),
+          TextFormField(
+            key: const Key('forgot-email'),
+            controller: _emailController,
+            autofocus: true,
+            enabled: !_busy,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(
+              labelText: 'Work email',
+              hintText: 'you@company.com',
+              prefixIcon: Icon(Icons.mail_outline_rounded),
+            ),
+            validator: _validateEmail,
+          ),
+          if (_error != null) _DialogError(message: _error!),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResetStep() {
+    return Form(
+      key: _resetFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE7F6F1),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.mark_email_read_outlined,
+                  size: 17,
+                  color: Color(0xFF2A7C68),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Open the reset link we sent to your email, or paste the code below. It expires in one hour.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF37685C),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Account: ${_emailController.text.trim()}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF60717A)),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            key: const Key('reset-token'),
+            controller: _tokenController,
+            enabled: !_busy,
+            minLines: 1,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Reset code or link',
+              hintText: 'Paste the code from your email',
+              prefixIcon: Icon(Icons.key_rounded),
+            ),
+            validator: _validateToken,
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const Key('reset-password'),
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            enabled: !_busy,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(
+              labelText: 'New password',
+              helperText: 'At least 8 characters',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+            ),
+            validator: _validatePassword,
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const Key('reset-confirm'),
+            controller: _confirmController,
+            obscureText: _obscureConfirmation,
+            enabled: !_busy,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(
+              labelText: 'Confirm new password',
+              prefixIcon: const Icon(Icons.lock_reset_rounded),
+              suffixIcon: IconButton(
+                tooltip: _obscureConfirmation
+                    ? 'Show password'
+                    : 'Hide password',
+                onPressed: () => setState(
+                  () => _obscureConfirmation = !_obscureConfirmation,
+                ),
+                icon: Icon(
+                  _obscureConfirmation
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+            ),
+            validator: _validateConfirmation,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'This replaces your current password and signs out your other sessions.',
+            style: TextStyle(
+              fontSize: 10,
+              color: Color(0xFF8A999E),
+              height: 1.4,
+            ),
+          ),
+          if (_error != null) _DialogError(message: _error!),
+        ],
+      ),
+    );
+  }
+}
+
+class _DialogError extends StatelessWidget {
+  const _DialogError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text(
+        message,
+        style: const TextStyle(fontSize: 11, color: Color(0xFFB05B68)),
       ),
     );
   }
@@ -436,10 +942,15 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
   late _Role _role;
-  bool _isClockedIn = true;
+  bool _isClockedIn = false;
   bool _breakStarted = false;
-  Duration _worked = const Duration(hours: 6, minutes: 24, seconds: 18);
+  Duration _worked = Duration.zero;
   Timer? _timer;
+
+  TodayAttendance? _today;
+  bool _attendanceLoading = true;
+  bool _attendanceBusy = false;
+  String? _attendanceError;
 
   final _allNavigation = const [
     _NavItem(
@@ -456,7 +967,7 @@ class _DashboardPageState extends State<DashboardPage> {
     ),
     _NavItem(
       Icons.event_available_outlined,
-      'Calendar',
+      'Attendance',
       _Permission.manageAttendance,
       _NavPage.calendar,
     ),
@@ -515,6 +1026,12 @@ class _DashboardPageState extends State<DashboardPage> {
         setState(() => _worked += const Duration(seconds: 1));
       }
     });
+    _loadTodayAttendance();
+  }
+
+  bool get _isManager {
+    final roles = widget.session.roles.map((role) => role.toLowerCase());
+    return roles.contains('super admin') || roles.contains('hr manager');
   }
 
   static _Role _roleFromApi(List<String> roles) {
@@ -522,7 +1039,9 @@ class _DashboardPageState extends State<DashboardPage> {
     if (normalized.contains('super admin')) return _Role.superAdmin;
     if (normalized.contains('hr manager')) return _Role.hrManager;
     if (normalized.contains('payroll officer')) return _Role.payrollOfficer;
-    if (normalized.contains('department manager')) return _Role.departmentManager;
+    if (normalized.contains('department manager')) {
+      return _Role.departmentManager;
+    }
     return _Role.employee;
   }
 
@@ -547,6 +1066,105 @@ class _DashboardPageState extends State<DashboardPage> {
           duration: const Duration(seconds: 2),
         ),
       );
+  }
+
+  Duration _workedFor(AttendanceRecord? record) {
+    final start = record?.checkInAt;
+    if (start == null) return Duration.zero;
+    final end = record?.checkOutAt ?? DateTime.now();
+    final diff = end.difference(start);
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  String _formatClock(DateTime? value) {
+    if (value == null) return '--';
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour < 12 ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
+  String _attendanceStatusDetail() {
+    if (_attendanceLoading) return 'Loading attendance…';
+    if (_attendanceError != null) return 'Attendance unavailable';
+    final record = _today?.record;
+    if (record?.checkInAt == null) return 'You have not checked in today';
+    if (record!.checkOutAt != null) {
+      return 'Checked out at ${_formatClock(record.checkOutAt)}';
+    }
+    return 'Clocked in at ${_formatClock(record.checkInAt)}';
+  }
+
+  Future<void> _loadTodayAttendance() async {
+    if (mounted) {
+      setState(() {
+        _attendanceLoading = true;
+        _attendanceError = null;
+      });
+    }
+    try {
+      final today = await widget.api.getTodayAttendance();
+      if (!mounted) return;
+      final record = today.record;
+      setState(() {
+        _today = today;
+        _attendanceLoading = false;
+        _isClockedIn =
+            record != null &&
+            record.checkInAt != null &&
+            record.checkOutAt == null;
+        _worked = _workedFor(record);
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _attendanceLoading = false;
+        _attendanceError = error.message;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _attendanceLoading = false;
+        _attendanceError = 'The API took too long to respond.';
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _attendanceLoading = false;
+        _attendanceError = 'Could not load attendance. Check your connection.';
+      });
+    }
+  }
+
+  Future<void> _toggleClock() async {
+    if (_attendanceBusy || _attendanceLoading) return;
+    final record = _today?.record;
+    if (record?.checkOutAt != null) {
+      _showMessage('You already checked out today.');
+      return;
+    }
+    setState(() => _attendanceBusy = true);
+    try {
+      if (record?.checkInAt != null) {
+        final result = await widget.api.checkOut();
+        if (!mounted) return;
+        _showMessage(result.message);
+      } else {
+        final result = await widget.api.checkIn();
+        if (!mounted) return;
+        _showMessage(result.message);
+      }
+      await _loadTodayAttendance();
+    } on ApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } on TimeoutException {
+      if (mounted) _showMessage('The API took too long to respond. Try again.');
+    } on Exception {
+      if (mounted) _showMessage('Could not update attendance. Try again.');
+    } finally {
+      if (mounted) setState(() => _attendanceBusy = false);
+    }
   }
 
   @override
@@ -602,18 +1220,19 @@ class _DashboardPageState extends State<DashboardPage> {
                               ? _DashboardContent(
                                   compact: compact,
                                   worked: _formatDuration(_worked),
+                                  workedDetail:
+                                      '${_formatDuration(_worked)} worked',
+                                  workedProgress: (_worked.inMinutes / 480)
+                                      .clamp(0.0, 1.0),
+                                  statusDetail: _attendanceStatusDetail(),
                                   isClockedIn: _isClockedIn,
                                   breakStarted: _breakStarted,
-                                  onClockToggle: () {
-                                    setState(
-                                      () => _isClockedIn = !_isClockedIn,
-                                    );
-                                    _showMessage(
-                                      _isClockedIn
-                                          ? 'You are clocked in.'
-                                          : 'You are clocked out.',
-                                    );
-                                  },
+                                  busy: _attendanceBusy,
+                                  today: _today,
+                                  attendanceLoading: _attendanceLoading,
+                                  attendanceError: _attendanceError,
+                                  isManager: _isManager,
+                                  onClockToggle: _toggleClock,
                                   onBreakToggle: () {
                                     setState(
                                       () => _breakStarted = !_breakStarted,
@@ -624,6 +1243,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                           : 'Welcome back.',
                                     );
                                   },
+                                  onRefreshAttendance: _loadTodayAttendance,
                                   onAction: _showMessage,
                                 )
                               : _navigation[_selectedIndex].page ==
@@ -633,7 +1253,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                 )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.calendar
-                              ? _AttendanceContent(onAction: _showMessage)
+                              ? _AttendanceContent(
+                                  api: widget.api,
+                                  session: widget.session,
+                                  onAction: _showMessage,
+                                )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.leaveRequests
                               ? _TimeOffContent(onAction: _showMessage)
@@ -642,7 +1266,11 @@ class _DashboardPageState extends State<DashboardPage> {
                               ? _MyLeaveContent(onAction: _showMessage)
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.team
-                              ? _TeamContent(onAction: _showMessage)
+                              ? _TeamContent(
+                                  api: widget.api,
+                                  isManager: _isManager,
+                                  onAction: _showMessage,
+                                )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.reports
                               ? _ReportsContent(onAction: _showMessage)
@@ -746,12 +1374,15 @@ class _Sidebar extends StatelessWidget {
               children: [
                 Icon(Icons.hub_rounded, color: Color(0xFF8EE6D4), size: 25),
                 SizedBox(width: 9),
-                Text(
-                  'PeopleHub',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
+                Flexible(
+                  child: Text(
+                    'PeopleHub',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
@@ -765,41 +1396,41 @@ class _Sidebar extends StatelessWidget {
             ),
           const Spacer(),
           Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 8, 14),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 15,
-                    backgroundColor: Color(0xFFDCEAE8),
-                    child: Text(
-                      'A',
-                      style: TextStyle(
-                        color: Color(0xFF103A48),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
+            padding: const EdgeInsets.fromLTRB(14, 8, 8, 14),
+            child: Row(
+              children: [
+                const CircleAvatar(
+                  radius: 15,
+                  backgroundColor: Color(0xFFDCEAE8),
+                  child: Text(
+                    'A',
+                    style: TextStyle(
+                      color: Color(0xFF103A48),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      role.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    role.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const Icon(
-                    Icons.unfold_more_rounded,
-                    color: Color(0xFFA8C1C7),
-                    size: 17,
-                  ),
-                ],
-              ),
+                ),
+                const Icon(
+                  Icons.unfold_more_rounded,
+                  color: Color(0xFFA8C1C7),
+                  size: 17,
+                ),
+              ],
             ),
+          ),
           if (_RolePolicy.can(role, _Permission.manageCompany))
             _SidebarItem(
               item: const _NavItem(
@@ -874,12 +1505,15 @@ class _SidebarItem extends StatelessWidget {
                       : const Color(0xFFB6C8CD),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFFB6C8CD),
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                Expanded(
+                  child: Text(
+                    item.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? Colors.white : const Color(0xFFB6C8CD),
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
@@ -895,19 +1529,37 @@ class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
     required this.compact,
     required this.worked,
+    required this.workedDetail,
+    required this.workedProgress,
+    required this.statusDetail,
     required this.isClockedIn,
     required this.breakStarted,
+    required this.busy,
+    required this.today,
+    required this.attendanceLoading,
+    required this.attendanceError,
+    required this.isManager,
     required this.onClockToggle,
     required this.onBreakToggle,
+    required this.onRefreshAttendance,
     required this.onAction,
   });
 
   final bool compact;
   final String worked;
+  final String workedDetail;
+  final double workedProgress;
+  final String statusDetail;
   final bool isClockedIn;
   final bool breakStarted;
+  final bool busy;
+  final TodayAttendance? today;
+  final bool attendanceLoading;
+  final String? attendanceError;
+  final bool isManager;
   final VoidCallback onClockToggle;
   final VoidCallback onBreakToggle;
+  final Future<void> Function() onRefreshAttendance;
   final ValueChanged<String> onAction;
 
   @override
@@ -985,13 +1637,24 @@ class _DashboardContent extends StatelessWidget {
                 children: [
                   _WorkingTimeCard(
                     worked: worked,
+                    workedDetail: workedDetail,
+                    progress: workedProgress,
+                    statusDetail: statusDetail,
                     isClockedIn: isClockedIn,
                     breakStarted: breakStarted,
+                    busy: busy,
                     onClockToggle: onClockToggle,
                     onBreakToggle: onBreakToggle,
                   ),
                   const SizedBox(height: 18),
-                  _AttendanceCard(),
+                  _AttendanceCard(
+                    today: today,
+                    loading: attendanceLoading,
+                    busy: busy,
+                    error: attendanceError,
+                    onRefresh: onRefreshAttendance,
+                    onClockToggle: onClockToggle,
+                  ),
                 ],
               )
             : Row(
@@ -1001,14 +1664,28 @@ class _DashboardContent extends StatelessWidget {
                     flex: 3,
                     child: _WorkingTimeCard(
                       worked: worked,
+                      workedDetail: workedDetail,
+                      progress: workedProgress,
+                      statusDetail: statusDetail,
                       isClockedIn: isClockedIn,
                       breakStarted: breakStarted,
+                      busy: busy,
                       onClockToggle: onClockToggle,
                       onBreakToggle: onBreakToggle,
                     ),
                   ),
                   const SizedBox(width: 18),
-                  const Expanded(flex: 2, child: _AttendanceCard()),
+                  Expanded(
+                    flex: 2,
+                    child: _AttendanceCard(
+                      today: today,
+                      loading: attendanceLoading,
+                      busy: busy,
+                      error: attendanceError,
+                      onRefresh: onRefreshAttendance,
+                      onClockToggle: onClockToggle,
+                    ),
+                  ),
                 ],
               ),
         const SizedBox(height: 18),
@@ -1038,65 +1715,199 @@ class _DashboardContent extends StatelessWidget {
   }
 }
 
-class _TeamContent extends StatelessWidget {
-  const _TeamContent({required this.onAction});
+class _TeamContent extends StatefulWidget {
+  const _TeamContent({
+    required this.api,
+    required this.isManager,
+    required this.onAction,
+  });
 
+  final HrmApiClient api;
+  final bool isManager;
   final ValueChanged<String> onAction;
 
   @override
+  State<_TeamContent> createState() => _TeamContentState();
+}
+
+class _TeamContentState extends State<_TeamContent> {
+  bool _loading = true;
+  String? _error;
+  AdminDailyReport? _daily;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (!widget.isManager) {
+      setState(() => _loading = false);
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final report = await widget.api.getAdminDailyReport(DateTime.now());
+      if (!mounted) return;
+      setState(() {
+        _daily = report;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load team attendance.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final daily = _daily;
+    final total = daily?.totalUsers ?? 0;
+    final present = daily?.presentCount ?? 0;
+    final late = daily?.lateCount ?? 0;
+    final onLeave = daily?.onLeaveCount ?? 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Your team, at a glance',
-          style: Theme.of(context).textTheme.headlineMedium,
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your team, at a glance',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'A quick view of your team attendance and requests.',
+                    style: TextStyle(color: Color(0xFF83939A), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh team attendance',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(
+                Icons.refresh_rounded,
+                size: 18,
+                color: Color(0xFF6E8087),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 5),
-        const Text(
-          'A quick view of your team attendance and requests.',
-          style: TextStyle(color: Color(0xFF83939A), fontSize: 12),
-        ),
-        const SizedBox(height: 26),
-        const _MetricGrid(
+        const SizedBox(height: 22),
+        _MetricGrid(
           children: [
             _MetricCard(
               label: 'Present today',
-              value: '112',
-              note: 'out of 124 employees',
-              progress: 0.90,
-              color: Color(0xFFDDF6EB),
+              value: _loading ? '—' : '$present',
+              note: total > 0 ? 'out of $total employees' : 'No data',
+              progress: total > 0 ? present / total : 0,
+              color: const Color(0xFFDDF6EB),
             ),
             _MetricCard(
               label: 'On leave today',
-              value: '8',
-              note: '6.5% of your team',
-              progress: 0.35,
+              value: _loading ? '—' : '$onLeave',
+              note: total > 0 ? 'of your team' : 'No data',
+              progress: total > 0 ? onLeave / total : 0,
               color: Colors.white,
             ),
             _MetricCard(
               label: 'Late arrivals',
-              value: '4',
-              note: 'Needs attention',
-              progress: 0.20,
+              value: _loading ? '—' : '$late',
+              note: late > 0 ? 'Needs attention' : 'All on time',
+              progress: total > 0 ? late / total : 0,
               color: Colors.white,
             ),
           ],
         ),
+        if (_error != null) ...[
+          const SizedBox(height: 14),
+          _Panel(
+            title: 'Could not load team attendance',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFB05B68),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 18),
         LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 760;
-            final calendar = const _AttendanceCalendar();
-            final requests = _RequestsToReview(onAction: onAction);
+            final attendance = _Panel(
+              title: "Today's team attendance",
+              trailing: Text(
+                total > 0 ? '$total people' : '',
+                style: const TextStyle(fontSize: 10, color: Color(0xFF8B9AA0)),
+              ),
+              child: !widget.isManager
+                  ? const Text(
+                      'Team-wide attendance is available to HR managers and admins.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF8B9AA0)),
+                    )
+                  : _loading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  : _TeamAttendanceTable(report: daily),
+            );
+            final requests = _RequestsToReview(onAction: widget.onAction);
             return compact
                 ? Column(
-                    children: [calendar, const SizedBox(height: 18), requests],
+                    children: [
+                      attendance,
+                      const SizedBox(height: 18),
+                      requests,
+                    ],
                   )
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: calendar),
+                      Expanded(child: attendance),
                       const SizedBox(width: 18),
                       Expanded(child: requests),
                     ],
@@ -1108,483 +1919,77 @@ class _TeamContent extends StatelessWidget {
   }
 }
 
-enum _AttendanceStatus { present, absent, leave }
+class _TeamAttendanceTable extends StatelessWidget {
+  const _TeamAttendanceTable({required this.report});
 
-class _DayAttendance {
-  const _DayAttendance(this.day, this.entries);
-
-  final int day;
-  final Map<_AttendanceStatus, List<String>> entries;
-
-  bool get isFuture => day > 18;
-
-  List<String> namesFor(_AttendanceStatus status) =>
-      entries[status] ?? const [];
-}
-
-class _AttendanceCalendar extends StatefulWidget {
-  const _AttendanceCalendar();
-
-  @override
-  State<_AttendanceCalendar> createState() => _AttendanceCalendarState();
-}
-
-class _AttendanceCalendarState extends State<_AttendanceCalendar> {
-  int _year = 2026;
-  int _month = 11;
-
-  static const _weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  static const _days = [
-    _DayAttendance(1, {
-      _AttendanceStatus.present: ['Maya Chen', 'Liam Patel'],
-      _AttendanceStatus.absent: ['Noah Williams'],
-    }),
-    _DayAttendance(2, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Maya Chen'],
-      _AttendanceStatus.leave: ['Liam Patel'],
-    }),
-    _DayAttendance(3, {
-      _AttendanceStatus.present: ['Noah Williams', 'Ava Thompson'],
-      _AttendanceStatus.absent: ['Liam Patel'],
-    }),
-    _DayAttendance(4, {
-      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams'],
-    }),
-    _DayAttendance(5, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
-      _AttendanceStatus.leave: ['Maya Chen'],
-    }),
-    _DayAttendance(6, {
-      _AttendanceStatus.present: ['Noah Williams', 'Maya Chen'],
-    }),
-    _DayAttendance(7, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
-      _AttendanceStatus.absent: ['Maya Chen'],
-    }),
-    _DayAttendance(8, {
-      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams'],
-    }),
-    _DayAttendance(9, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
-      _AttendanceStatus.leave: ['Noah Williams'],
-    }),
-    _DayAttendance(10, {
-      _AttendanceStatus.present: ['Maya Chen', 'Ava Thompson'],
-      _AttendanceStatus.absent: ['Liam Patel'],
-    }),
-    _DayAttendance(11, {
-      _AttendanceStatus.present: ['Noah Williams', 'Liam Patel'],
-    }),
-    _DayAttendance(12, {
-      _AttendanceStatus.present: ['Maya Chen', 'Ava Thompson'],
-      _AttendanceStatus.leave: ['Noah Williams'],
-    }),
-    _DayAttendance(13, {
-      _AttendanceStatus.present: ['Liam Patel', 'Noah Williams'],
-    }),
-    _DayAttendance(14, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Maya Chen'],
-      _AttendanceStatus.absent: ['Liam Patel'],
-    }),
-    _DayAttendance(15, {
-      _AttendanceStatus.present: ['Noah Williams', 'Maya Chen'],
-    }),
-    _DayAttendance(16, {
-      _AttendanceStatus.present: ['Ava Thompson', 'Liam Patel'],
-      _AttendanceStatus.leave: ['Noah Williams'],
-    }),
-    _DayAttendance(17, {
-      _AttendanceStatus.present: ['Maya Chen', 'Liam Patel'],
-    }),
-    _DayAttendance(18, {
-      _AttendanceStatus.present: ['Maya Chen', 'Noah Williams', 'Liam Patel'],
-      _AttendanceStatus.leave: ['Ava Thompson'],
-    }),
-    _DayAttendance(19, {
-      _AttendanceStatus.leave: ['Ava Thompson'],
-    }),
-    _DayAttendance(20, {
-      _AttendanceStatus.leave: ['Noah Williams', 'Ava Thompson'],
-    }),
-    _DayAttendance(21, {}),
-    _DayAttendance(22, {
-      _AttendanceStatus.leave: ['Maya Chen'],
-    }),
-    _DayAttendance(23, {}),
-    _DayAttendance(24, {
-      _AttendanceStatus.leave: ['Liam Patel'],
-    }),
-    _DayAttendance(25, {}),
-    _DayAttendance(26, {}),
-    _DayAttendance(27, {}),
-    _DayAttendance(28, {}),
-    _DayAttendance(29, {}),
-    _DayAttendance(30, {}),
-  ];
-
-  String get _monthLabel => const [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ][_month - 1];
-
-  bool get _isCurrentPeriod => _year == 2026 && _month == 11;
-
-  List<_DayAttendance> get _visibleDays {
-    final count = DateTime(_year, _month + 1, 0).day;
-    if (_isCurrentPeriod) return _days;
-    return List.generate(count, (index) {
-      final day = index + 1;
-      final seed = day + _month + _year;
-      final names = const [
-        'Maya Chen',
-        'Noah Williams',
-        'Ava Thompson',
-        'Liam Patel',
-      ];
-      final entries = <_AttendanceStatus, List<String>>{
-        _AttendanceStatus.present: [
-          names[seed % names.length],
-          names[(seed + 1) % names.length],
-        ],
-      };
-      if (seed % 5 == 0) {
-        entries[_AttendanceStatus.absent] = [names[(seed + 2) % names.length]];
-      } else if (seed % 4 == 0) {
-        entries[_AttendanceStatus.leave] = [names[(seed + 2) % names.length]];
-      }
-      return _DayAttendance(day, entries);
-    });
-  }
+  final AdminDailyReport? report;
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(
-      title: 'Attendance calendar',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Previous month',
-                onPressed: () => setState(() {
-                  if (_month == 1) {
-                    _month = 12;
-                    _year--;
-                  } else {
-                    _month--;
-                  }
-                }),
-                icon: const Icon(Icons.chevron_left_rounded, size: 19),
-                visualDensity: VisualDensity.compact,
-              ),
-              Expanded(
-                child: Text(
-                  '$_monthLabel $_year',
+    final entries = report?.records ?? const <AdminDailyEntry>[];
+    if (entries.isEmpty) {
+      return const Text(
+        'No team attendance data for today.',
+        style: TextStyle(fontSize: 11, color: Color(0xFF8B9AA0)),
+      );
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 34,
+        dataRowMinHeight: 42,
+        dataRowMaxHeight: 50,
+        columnSpacing: 24,
+        columns: const ['Employee', 'Check-in', 'Status', 'Worked']
+            .map(
+              (title) => DataColumn(
+                label: Text(
+                  title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    color: Color(0xFF41555D),
+                    fontSize: 10,
+                    color: Color(0xFF8A999E),
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: 'Next month',
-                onPressed: () => setState(() {
-                  if (_month == 12) {
-                    _month = 1;
-                    _year++;
-                  } else {
-                    _month++;
-                  }
-                }),
-                icon: const Icon(Icons.chevron_right_rounded, size: 19),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          const SizedBox(height: 15),
-          Row(
-            children: _weekdays
-                .map(
-                  (day) => Expanded(
-                    child: Center(
-                      child: Text(
-                        day,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF9AA8AD),
-                        ),
+            )
+            .toList(),
+        rows: entries
+            .map(
+              (entry) => DataRow(
+                cells: [
+                  DataCell(
+                    Text(
+                      entry.userEmail,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF41555D),
                       ),
                     ),
                   ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 6),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount:
-                DateTime(_year, _month, 1).weekday % 7 + _visibleDays.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 1.7,
-            ),
-            itemBuilder: (context, index) {
-              final offset = DateTime(_year, _month, 1).weekday % 7;
-              if (index < offset) return const SizedBox.shrink();
-              final dayIndex = index - offset;
-              if (dayIndex >= _visibleDays.length) {
-                return const SizedBox.shrink();
-              }
-              final day = _visibleDays[dayIndex];
-              return _AttendanceDayCell(
-                day: day,
-                future: _isCurrentPeriod && day.day > 18,
-                month: _month,
-                year: _year,
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          const Wrap(
-            spacing: 12,
-            children: [
-              _Legend(color: Color(0xFF55B89D), label: 'Present'),
-              _Legend(color: Color(0xFFE7C46A), label: 'Leave'),
-              _Legend(color: Color(0xFFE58A8A), label: 'Absent'),
-              _Legend(color: Color(0xFFCAD5D8), label: 'Today'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttendanceDayCell extends StatelessWidget {
-  const _AttendanceDayCell({
-    required this.day,
-    required this.future,
-    required this.month,
-    required this.year,
-  });
-
-  final _DayAttendance day;
-  final bool future;
-  final int month;
-  final int year;
-
-  static const _colors = {
-    _AttendanceStatus.present: Color(0xFF55B89D),
-    _AttendanceStatus.absent: Color(0xFFE58A8A),
-    _AttendanceStatus.leave: Color(0xFFE7C46A),
-  };
-
-  String _tooltipText() {
-    final visibleEntries = future
-        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
-        : day.entries;
-    if (visibleEntries.values.every((names) => names.isEmpty)) {
-      return 'No attendance recorded';
-    }
-    return visibleEntries.entries
-        .where((entry) => entry.value.isNotEmpty)
-        .map((entry) => '${_statusLabel(entry.key)}: ${entry.value.join(', ')}')
-        .join('\n');
-  }
-
-  static String _statusLabel(_AttendanceStatus status) {
-    switch (status) {
-      case _AttendanceStatus.present:
-        return 'Present';
-      case _AttendanceStatus.absent:
-        return 'Absent';
-      case _AttendanceStatus.leave:
-        return 'Leave';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = future
-        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
-        : day.entries;
-    final hasData = entries.values.any((names) => names.isNotEmpty);
-    final isToday = day.day == 18;
-    final cell = Material(
-      color: isToday ? const Color(0xFFDDF6EB) : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: () => _showDayDetails(context),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${day.day}',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isToday
-                      ? const Color(0xFF2A9A75)
-                      : const Color(0xFF667980),
-                  fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
-                ),
+                  DataCell(
+                    Text(
+                      _clockLabel(entry.checkInAt),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF41555D),
+                      ),
+                    ),
+                  ),
+                  DataCell(_StatusPill(status: entry.status)),
+                  DataCell(
+                    Text(
+                      _minutesLabel(entry.workingDurationMinutes),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF41555D),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 3),
-              if (hasData)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: entries.entries
-                      .where((entry) => entry.value.isNotEmpty)
-                      .map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                          child: Container(
-                            width: 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: _colors[entry.key],
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                )
-              else
-                const SizedBox(height: 5),
-            ],
-          ),
-        ),
+            )
+            .toList(),
       ),
-    );
-    return Tooltip(
-      message: _tooltipText(),
-      waitDuration: const Duration(milliseconds: 250),
-      child: cell,
-    );
-  }
-
-  void _showDayDetails(BuildContext context) {
-    final entries = future
-        ? {_AttendanceStatus.leave: day.namesFor(_AttendanceStatus.leave)}
-        : day.entries;
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${_monthName(month)} ${day.day}, $year'),
-        content: SizedBox(
-          width: 360,
-          child: entries.values.every((names) => names.isEmpty)
-              ? const Text(
-                  'No attendance or approved leave recorded for this day.',
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: entries.entries
-                      .where((entry) => entry.value.isNotEmpty)
-                      .map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: _colors[entry.key],
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _statusLabel(entry.key),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                entry.value.join(' • '),
-                                style: const TextStyle(
-                                  color: Color(0xFF60717A),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _monthName(int month) => const [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ][month - 1];
-}
-
-class _Legend extends StatelessWidget {
-  const _Legend({required this.color, required this.label});
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 9, color: Color(0xFF788A90)),
-        ),
-      ],
     );
   }
 }
@@ -1752,15 +2157,23 @@ class _MetricCard extends StatelessWidget {
 class _WorkingTimeCard extends StatelessWidget {
   const _WorkingTimeCard({
     required this.worked,
+    required this.workedDetail,
+    required this.progress,
+    required this.statusDetail,
     required this.isClockedIn,
     required this.breakStarted,
+    required this.busy,
     required this.onClockToggle,
     required this.onBreakToggle,
   });
 
   final String worked;
+  final String workedDetail;
+  final double progress;
+  final String statusDetail;
   final bool isClockedIn;
   final bool breakStarted;
+  final bool busy;
   final VoidCallback onClockToggle;
   final VoidCallback onBreakToggle;
 
@@ -1815,30 +2228,28 @@ class _WorkingTimeCard extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            isClockedIn
-                ? 'Clocked in at 8:00 AM • Remote'
-                : 'Your workday is paused',
+            statusDetail,
             style: const TextStyle(color: Color(0xFFA8C1C7), fontSize: 11),
           ),
           const SizedBox(height: 20),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: const LinearProgressIndicator(
-              value: 0.78,
+            child: LinearProgressIndicator(
+              value: progress,
               minHeight: 4,
-              backgroundColor: Color(0xFF315C68),
-              color: Color(0xFF6DDBC5),
+              backgroundColor: const Color(0xFF315C68),
+              color: const Color(0xFF6DDBC5),
             ),
           ),
           const SizedBox(height: 6),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '6h 24m worked',
-                style: TextStyle(color: Color(0xFFA8C1C7), fontSize: 10),
+                workedDetail,
+                style: const TextStyle(color: Color(0xFFA8C1C7), fontSize: 10),
               ),
-              Text(
+              const Text(
                 '8h daily goal',
                 style: TextStyle(color: Color(0xFFA8C1C7), fontSize: 10),
               ),
@@ -1860,7 +2271,7 @@ class _WorkingTimeCard extends StatelessWidget {
               _ActionButton(
                 icon: isClockedIn ? Icons.logout_rounded : Icons.login_rounded,
                 label: isClockedIn ? 'Clock out' : 'Clock in',
-                onPressed: onClockToggle,
+                onPressed: busy ? null : onClockToggle,
               ),
             ],
           ),
@@ -1880,7 +2291,7 @@ class _ActionButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool outlined;
 
   @override
@@ -1905,38 +2316,155 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _AttendanceCard extends StatelessWidget {
-  const _AttendanceCard();
+  const _AttendanceCard({
+    required this.today,
+    required this.loading,
+    required this.busy,
+    required this.error,
+    required this.onRefresh,
+    required this.onClockToggle,
+  });
+
+  final TodayAttendance? today;
+  final bool loading;
+  final bool busy;
+  final String? error;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onClockToggle;
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
       title: "Today's attendance",
-      child: Column(
+      trailing: IconButton(
+        tooltip: 'Refresh attendance',
+        onPressed: loading ? null : () => onRefresh(),
+        icon: const Icon(
+          Icons.refresh_rounded,
+          size: 17,
+          color: Color(0xFF6E8087),
+        ),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 14),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (error != null) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _InfoLine(label: 'Check-in', value: '8:00 AM'),
-          const _InfoLine(label: 'Check-out', value: '--'),
-          const _InfoLine(label: 'Break time', value: '30 minutes'),
-          const _InfoLine(
-            label: 'Status',
-            value: 'On time',
-            valueColor: Color(0xFF2A9A75),
+          Text(
+            error!,
+            style: const TextStyle(fontSize: 11, color: Color(0xFFB05B68)),
           ),
-          const SizedBox(height: 13),
-          Container(
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: () => onRefresh(),
+            child: const Text('Retry', style: TextStyle(fontSize: 11)),
+          ),
+        ],
+      );
+    }
+
+    final record = today?.record;
+    if (record == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'You have not checked in today.',
+            style: TextStyle(fontSize: 11, color: Color(0xFF667980)),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
             width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF2F6F7),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              'Your shift: 9:00 AM – 5:30 PM',
-              style: TextStyle(fontSize: 10, color: Color(0xFF667980)),
+            child: FilledButton.icon(
+              onPressed: busy ? null : onClockToggle,
+              icon: const Icon(Icons.login_rounded, size: 15),
+              label: const Text(
+                'Check in',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF3568D5),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
             ),
           ),
         ],
-      ),
+      );
+    }
+
+    final checkedOut = record.checkOutAt != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _InfoLine(label: 'Check-in', value: _clockLabel(record.checkInAt)),
+        _InfoLine(label: 'Check-out', value: _clockLabel(record.checkOutAt)),
+        _InfoLine(
+          label: 'Worked',
+          value: _minutesLabel(record.workingDurationMinutes),
+        ),
+        _InfoLine(
+          label: 'Status',
+          value: record.status.label,
+          valueColor: _attendanceStatusColor(record.status),
+        ),
+        if (record.lateMinutes > 0)
+          _InfoLine(
+            label: 'Late',
+            value: '${record.lateMinutes} min',
+            valueColor: const Color(0xFFB07B22),
+          ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: checkedOut
+              ? Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F6F7),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Attendance complete for today.',
+                    style: TextStyle(fontSize: 10, color: Color(0xFF667980)),
+                  ),
+                )
+              : FilledButton.icon(
+                  onPressed: busy ? null : onClockToggle,
+                  icon: const Icon(Icons.logout_rounded, size: 15),
+                  label: const Text(
+                    'Check out',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF3568D5),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                ),
+        ),
+      ],
     );
   }
 }
@@ -2177,49 +2705,570 @@ class _Activity extends StatelessWidget {
   }
 }
 
-class _AttendanceContent extends StatelessWidget {
-  const _AttendanceContent({required this.onAction});
+class _AttendanceContent extends StatefulWidget {
+  const _AttendanceContent({
+    required this.api,
+    required this.session,
+    required this.onAction,
+  });
+
+  final HrmApiClient api;
+  final AuthSession session;
   final ValueChanged<String> onAction;
+
+  @override
+  State<_AttendanceContent> createState() => _AttendanceContentState();
+}
+
+class _AttendanceContentState extends State<_AttendanceContent> {
+  final DateTime _now = DateTime.now();
+  late final DateTime _monthStart;
+  late final DateTime _monthEnd;
+
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+  TodayAttendance? _today;
+  AttendanceHistory? _history;
+  AdminDailyReport? _daily;
+  AdminMonthlySummary? _monthly;
+
+  bool get _isManager {
+    final roles = widget.session.roles.map((role) => role.toLowerCase());
+    return roles.contains('super admin') || roles.contains('hr manager');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _monthStart = DateTime(_now.year, _now.month, 1);
+    _monthEnd = DateTime(_now.year, _now.month + 1, 0);
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final today = await widget.api.getTodayAttendance();
+      final history = await widget.api.getMyAttendance(
+        from: _monthStart,
+        to: _monthEnd,
+        pageSize: 100,
+      );
+      AdminDailyReport? daily;
+      AdminMonthlySummary? monthly;
+      if (_isManager) {
+        daily = await widget.api.getAdminDailyReport(_now);
+        monthly = await widget.api.getAdminMonthlySummary(
+          year: _now.year,
+          month: _now.month,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _today = today;
+        _history = history;
+        _daily = daily;
+        _monthly = monthly;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond. Please try again.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not reach the HR API. Check your connection.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _checkIn() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await widget.api.checkIn();
+      widget.onAction(result.message);
+      await _load();
+    } on ApiException catch (error) {
+      widget.onAction(error.message);
+    } on TimeoutException {
+      widget.onAction('The API took too long to respond. Try again.');
+    } on Exception {
+      widget.onAction('Could not check in. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _checkOut() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await widget.api.checkOut();
+      widget.onAction(result.message);
+      await _load();
+    } on ApiException catch (error) {
+      widget.onAction(error.message);
+    } on TimeoutException {
+      widget.onAction('The API took too long to respond. Try again.');
+    } on Exception {
+      widget.onAction('Could not check out. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  List<_SummaryItem> _managerSummary() {
+    final daily = _daily;
+    if (daily == null) return const [];
+    return [
+      _SummaryItem('Present', '${daily.presentCount}', const Color(0xFFDDF6EB)),
+      _SummaryItem('Late', '${daily.lateCount}', const Color(0xFFFFF3D6)),
+      _SummaryItem('Absent', '${daily.absentCount}', const Color(0xFFFFE5E8)),
+      _SummaryItem(
+        'On leave',
+        '${daily.onLeaveCount}',
+        const Color(0xFFE7EFFD),
+      ),
+    ];
+  }
+
+  List<_SummaryItem> _personalSummary() {
+    final records = _history?.records ?? const <AttendanceRecord>[];
+    int count(AttendanceStatus status) =>
+        records.where((record) => record.status == status).length;
+    return [
+      _SummaryItem(
+        'Present',
+        '${count(AttendanceStatus.present)}',
+        const Color(0xFFDDF6EB),
+      ),
+      _SummaryItem(
+        'Late',
+        '${count(AttendanceStatus.late)}',
+        const Color(0xFFFFF3D6),
+      ),
+      _SummaryItem(
+        'Absent',
+        '${count(AttendanceStatus.absent)}',
+        const Color(0xFFFFE5E8),
+      ),
+      _SummaryItem(
+        'On leave',
+        '${count(AttendanceStatus.onLeave)}',
+        const Color(0xFFE7EFFD),
+      ),
+    ];
+  }
+
+  Widget _buildToday() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    final record = _today?.record;
+    if (record == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'You have not checked in today.',
+            style: TextStyle(fontSize: 11, color: Color(0xFF667980)),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _busy ? null : _checkIn,
+            icon: const Icon(Icons.login_rounded, size: 15),
+            label: const Text(
+              'Check in',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3568D5),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final checkedOut = record.checkOutAt != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _InfoLine(label: 'Check-in', value: _clockLabel(record.checkInAt)),
+        _InfoLine(label: 'Check-out', value: _clockLabel(record.checkOutAt)),
+        _InfoLine(
+          label: 'Worked',
+          value: _minutesLabel(record.workingDurationMinutes),
+        ),
+        _InfoLine(
+          label: 'Status',
+          value: record.status.label,
+          valueColor: _attendanceStatusColor(record.status),
+        ),
+        if (record.lateMinutes > 0)
+          _InfoLine(
+            label: 'Late',
+            value: '${record.lateMinutes} min',
+            valueColor: const Color(0xFFB07B22),
+          ),
+        const SizedBox(height: 10),
+        if (checkedOut)
+          const Text(
+            'Your attendance is complete for today.',
+            style: TextStyle(fontSize: 10, color: Color(0xFF667980)),
+          )
+        else
+          FilledButton.icon(
+            onPressed: _busy ? null : _checkOut,
+            icon: const Icon(Icons.logout_rounded, size: 15),
+            label: const Text(
+              'Check out',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3568D5),
+              foregroundColor: Colors.white,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHistoryTable() {
+    final records = _history?.records ?? const <AttendanceRecord>[];
+    if (records.isEmpty) {
+      return const Text(
+        'No attendance records for this month yet.',
+        style: TextStyle(fontSize: 11, color: Color(0xFF8B9AA0)),
+      );
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 34,
+        dataRowMinHeight: 42,
+        dataRowMaxHeight: 50,
+        columnSpacing: 26,
+        columns: const ['Date', 'Check-in', 'Check-out', 'Worked', 'Status']
+            .map(
+              (title) => DataColumn(
+                label: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A999E),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+        rows: records
+            .map(
+              (record) => DataRow(
+                cells: [
+                  DataCell(_cellText(_dateLabel(record.date))),
+                  DataCell(_cellText(_clockLabel(record.checkInAt))),
+                  DataCell(_cellText(_clockLabel(record.checkOutAt))),
+                  DataCell(
+                    _cellText(_minutesLabel(record.workingDurationMinutes)),
+                  ),
+                  DataCell(_StatusPill(status: record.status)),
+                ],
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildDailyTable() {
+    final daily = _daily;
+    if (daily == null || daily.records.isEmpty) {
+      return const Text(
+        'No team attendance data for today.',
+        style: TextStyle(fontSize: 11, color: Color(0xFF8B9AA0)),
+      );
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 34,
+        dataRowMinHeight: 42,
+        dataRowMaxHeight: 50,
+        columnSpacing: 26,
+        columns: const ['Employee', 'Check-in', 'Check-out', 'Worked', 'Status']
+            .map(
+              (title) => DataColumn(
+                label: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A999E),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+        rows: daily.records
+            .map(
+              (entry) => DataRow(
+                cells: [
+                  DataCell(_cellText(entry.userEmail)),
+                  DataCell(_cellText(_clockLabel(entry.checkInAt))),
+                  DataCell(_cellText(_clockLabel(entry.checkOutAt))),
+                  DataCell(
+                    _cellText(_minutesLabel(entry.workingDurationMinutes)),
+                  ),
+                  DataCell(_StatusPill(status: entry.status)),
+                ],
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildMonthlyTable() {
+    final monthly = _monthly;
+    if (monthly == null || monthly.summaries.isEmpty) {
+      return const Text(
+        'No monthly summaries available.',
+        style: TextStyle(fontSize: 11, color: Color(0xFF8B9AA0)),
+      );
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 34,
+        dataRowMinHeight: 42,
+        dataRowMaxHeight: 50,
+        columnSpacing: 22,
+        columns:
+            const [
+                  'Employee',
+                  'Present',
+                  'Late',
+                  'Absent',
+                  'Leave',
+                  'Attendance',
+                ]
+                .map(
+                  (title) => DataColumn(
+                    label: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF8A999E),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+        rows: monthly.summaries
+            .map(
+              (summary) => DataRow(
+                cells: [
+                  DataCell(_cellText(summary.userEmail)),
+                  DataCell(_cellText('${summary.presentDays}')),
+                  DataCell(_cellText('${summary.lateDays}')),
+                  DataCell(_cellText('${summary.absentDays}')),
+                  DataCell(_cellText('${summary.onLeaveDays}')),
+                  DataCell(
+                    _cellText(
+                      '${summary.attendancePercentage.toStringAsFixed(1)}%',
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _cellText(String value) {
+    return Text(
+      value,
+      style: const TextStyle(fontSize: 11, color: Color(0xFF41555D)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return _Workspace(
       title: 'Attendance',
-      subtitle: 'Monitor today’s attendance and working hours.',
-      action: FilledButton.icon(
-        onPressed: () => onAction('Attendance record correction opened.'),
-        icon: const Icon(Icons.edit_calendar_outlined, size: 16),
-        label: const Text('Correct record'),
+      subtitle: 'Check in, check out, and review working hours.',
+      action: OutlinedButton.icon(
+        onPressed: _loading ? null : _load,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: const Text('Refresh'),
       ),
       children: [
-        const _SummaryRow(
-          items: [
-            _SummaryItem('Present', '112', Color(0xFFDDF6EB)),
-            _SummaryItem('Late', '4', Color(0xFFFFF3D6)),
-            _SummaryItem('Absent', '3', Color(0xFFFFE5E8)),
-            _SummaryItem('On leave', '8', Color(0xFFE7EFFD)),
+        if (_error != null) ...[
+          _Panel(
+            title: 'Could not load attendance',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFB05B68),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        _Panel(title: "Today's attendance", child: _buildToday()),
+        const SizedBox(height: 18),
+        if (_isManager) ...[
+          if (_daily != null) ...[
+            _SummaryRow(items: _managerSummary()),
+            const SizedBox(height: 18),
+            _Panel(
+              title: "Today's team attendance",
+              trailing: Text(
+                '${_daily!.totalUsers} people',
+                style: const TextStyle(fontSize: 10, color: Color(0xFF8B9AA0)),
+              ),
+              child: _buildDailyTable(),
+            ),
+            const SizedBox(height: 18),
           ],
-        ),
-        const SizedBox(height: 18),
-        const _AttendanceCalendar(),
-        const SizedBox(height: 18),
-        _Panel(
-          title: 'Today’s attendance',
-          trailing: OutlinedButton.icon(
-            onPressed: () => onAction('Attendance export prepared.'),
-            icon: const Icon(Icons.download_outlined, size: 15),
-            label: const Text('Export', style: TextStyle(fontSize: 11)),
+        ] else if (_history != null) ...[
+          _SummaryRow(items: _personalSummary()),
+          const SizedBox(height: 18),
+        ],
+        if (_history != null)
+          _Panel(
+            title: 'My attendance — ${_monthLabel(_now.month)} ${_now.year}',
+            child: _buildHistoryTable(),
           ),
-          child: const _EmployeeTable(
-            rows: [
-              ['Maya Chen', 'Engineering', '8:54 AM', 'Present', 'On time'],
-              ['Noah Williams', 'Design', '9:18 AM', 'Present', 'Late'],
-              ['Ava Thompson', 'Product', 'On leave', 'Leave', 'Approved'],
-              ['Liam Patel', 'Sales', '—', 'Absent', 'Needs review'],
-            ],
+        if (_isManager && _monthly != null) ...[
+          const SizedBox(height: 18),
+          _Panel(
+            title: 'Monthly summary — ${_monthLabel(_now.month)} ${_now.year}',
+            child: _buildMonthlyTable(),
           ),
-        ),
+        ],
       ],
+    );
+  }
+}
+
+String _clockLabel(DateTime? value) {
+  if (value == null) return '--';
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour < 12 ? 'AM' : 'PM';
+  return '$hour:$minute $period';
+}
+
+String _minutesLabel(int minutes) {
+  if (minutes <= 0) return '--';
+  final hours = minutes ~/ 60;
+  final remainder = minutes % 60;
+  if (hours == 0) return '${remainder}m';
+  return '${hours}h ${remainder}m';
+}
+
+String _dateLabel(DateTime date) {
+  final day = date.day.toString().padLeft(2, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  return '$day/$month/${date.year}';
+}
+
+String _monthLabel(int month) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  if (month < 1 || month > 12) return '';
+  return months[month - 1];
+}
+
+Color _attendanceStatusColor(AttendanceStatus status) {
+  switch (status) {
+    case AttendanceStatus.present:
+      return const Color(0xFF2A9A75);
+    case AttendanceStatus.late:
+      return const Color(0xFFB07B22);
+    case AttendanceStatus.absent:
+      return const Color(0xFFB05B68);
+    case AttendanceStatus.onLeave:
+      return const Color(0xFF3568D5);
+    case AttendanceStatus.incomplete:
+      return const Color(0xFFB07B22);
+    case AttendanceStatus.holiday:
+      return const Color(0xFF8B9AA0);
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.status});
+
+  final AttendanceStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _attendanceStatusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(36),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
     );
   }
 }
@@ -2432,10 +3481,7 @@ class _EmployeeManagementContent extends StatelessWidget {
 }
 
 class _RoleManagementContent extends StatefulWidget {
-  const _RoleManagementContent({
-    required this.api,
-    required this.onAction,
-  });
+  const _RoleManagementContent({required this.api, required this.onAction});
 
   final HrmApiClient api;
   final ValueChanged<String> onAction;
@@ -2474,7 +3520,12 @@ class _RoleManagementContentState extends State<_RoleManagementContent> {
         _loading = false;
       });
     } on ApiException catch (error) {
-      if (mounted) setState(() { _error = error.message; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -2483,9 +3534,11 @@ class _RoleManagementContentState extends State<_RoleManagementContent> {
     setState(() => _updatingUserId = user.id);
     try {
       final currentRoles = user.roles
-          .map((name) => _roles.where(
-                (role) => role.name.toLowerCase() == name.toLowerCase(),
-              ).firstOrNull)
+          .map(
+            (name) => _roles
+                .where((role) => role.name.toLowerCase() == name.toLowerCase())
+                .firstOrNull,
+          )
           .whereType<ApiRole>()
           .toList();
 
@@ -2531,27 +3584,30 @@ class _RoleManagementContentState extends State<_RoleManagementContent> {
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_error!),
-                        const SizedBox(height: 10),
-                        OutlinedButton(onPressed: _load, child: const Text('Retry')),
-                      ],
-                    )
-                  : _users.isEmpty
-                      ? const Text('No accounts were returned by the API.')
-                      : Column(
-                          children: [
-                            for (final user in _users)
-                              _ApiRoleAssignmentRow(
-                                user: user,
-                                roles: _roles,
-                                updating: _updatingUserId == user.id,
-                                onChanged: (role) => _changeRole(user, role),
-                              ),
-                          ],
-                        ),
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_error!),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _load,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                )
+              : _users.isEmpty
+              ? const Text('No accounts were returned by the API.')
+              : Column(
+                  children: [
+                    for (final user in _users)
+                      _ApiRoleAssignmentRow(
+                        user: user,
+                        roles: _roles,
+                        updating: _updatingUserId == user.id,
+                        onChanged: (role) => _changeRole(user, role),
+                      ),
+                  ],
+                ),
         ),
       ],
     );
@@ -2573,12 +3629,15 @@ class _ApiRoleAssignmentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final current = user.roles
-        .where((name) => name.toLowerCase() != 'user')
-        .firstOrNull
-        ?.toLowerCase() ??
+    final current =
+        user.roles
+            .where((name) => name.toLowerCase() != 'user')
+            .firstOrNull
+            ?.toLowerCase() ??
         (user.roles.isEmpty ? null : 'user');
-    final selected = roles.where((role) => role.name.toLowerCase() == current).firstOrNull;
+    final selected = roles
+        .where((role) => role.name.toLowerCase() == current)
+        .firstOrNull;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
@@ -2586,16 +3645,32 @@ class _ApiRoleAssignmentRow extends StatelessWidget {
           const CircleAvatar(
             radius: 17,
             backgroundColor: Color(0xFFDCEAE8),
-            child: Icon(Icons.person_outline, size: 18, color: Color(0xFF103A48)),
+            child: Icon(
+              Icons.person_outline,
+              size: 18,
+              color: Color(0xFF103A48),
+            ),
           ),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(user.email, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(
+                  user.email,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(user.status, style: const TextStyle(fontSize: 10, color: Color(0xFF8A999E))),
+                Text(
+                  user.status,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF8A999E),
+                  ),
+                ),
               ],
             ),
           ),
@@ -2603,13 +3678,22 @@ class _ApiRoleAssignmentRow extends StatelessWidget {
             value: selected,
             hint: const Text('Select role', style: TextStyle(fontSize: 11)),
             underline: const SizedBox(),
-            items: roles.map((role) => DropdownMenuItem(
-              value: role,
-              child: Text(role.name, style: const TextStyle(fontSize: 11)),
-            )).toList(),
-            onChanged: updating ? null : (role) {
-              if (role != null) onChanged(role);
-            },
+            items: roles
+                .map(
+                  (role) => DropdownMenuItem(
+                    value: role,
+                    child: Text(
+                      role.name,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: updating
+                ? null
+                : (role) {
+                    if (role != null) onChanged(role);
+                  },
           ),
           if (updating)
             const Padding(

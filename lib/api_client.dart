@@ -50,9 +50,349 @@ class ApiUser {
   final String status;
 }
 
+/// Attendance status values returned by the HR API.
+enum AttendanceStatus {
+  present('Present'),
+  late('Late'),
+  absent('Absent'),
+  onLeave('On leave'),
+  incomplete('Incomplete'),
+  holiday('Holiday');
+
+  const AttendanceStatus(this.label);
+
+  final String label;
+
+  static AttendanceStatus fromApi(Object? value) {
+    switch (value?.toString().toLowerCase()) {
+      case 'present':
+        return AttendanceStatus.present;
+      case 'late':
+        return AttendanceStatus.late;
+      case 'absent':
+        return AttendanceStatus.absent;
+      case 'onleave':
+      case 'on_leave':
+      case 'on leave':
+        return AttendanceStatus.onLeave;
+      case 'incomplete':
+        return AttendanceStatus.incomplete;
+      case 'holiday':
+        return AttendanceStatus.holiday;
+      default:
+        return AttendanceStatus.present;
+    }
+  }
+}
+
+class AttendanceRecord {
+  const AttendanceRecord({
+    required this.id,
+    required this.userId,
+    required this.date,
+    required this.checkInAt,
+    required this.checkOutAt,
+    required this.status,
+    required this.workingDurationMinutes,
+    required this.lateMinutes,
+    required this.notes,
+  });
+
+  final String id;
+  final String userId;
+  final DateTime date;
+  final DateTime? checkInAt;
+  final DateTime? checkOutAt;
+  final AttendanceStatus status;
+  final int workingDurationMinutes;
+  final int lateMinutes;
+  final String? notes;
+
+  bool get isCheckedIn => checkInAt != null;
+  bool get isCheckedOut => checkOutAt != null;
+
+  factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
+    return AttendanceRecord(
+      id: json['id']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? '',
+      date: _parseApiDate(json['attendanceDate']) ?? DateTime.now(),
+      checkInAt: _parseApiDate(json['checkInAtUtc']),
+      checkOutAt: _parseApiDate(json['checkOutAtUtc']),
+      status: AttendanceStatus.fromApi(json['status']),
+      workingDurationMinutes: _asInt(json['workingDurationMinutes']),
+      lateMinutes: _asInt(json['lateMinutes']),
+      notes: json['notes'] as String?,
+    );
+  }
+}
+
+class TodayAttendance {
+  const TodayAttendance({required this.hasRecord, required this.record});
+
+  final bool hasRecord;
+  final AttendanceRecord? record;
+
+  factory TodayAttendance.fromJson(Map<String, dynamic> json) {
+    final rawRecord = json['record'];
+    return TodayAttendance(
+      hasRecord: json['hasRecord'] == true,
+      record: rawRecord is Map<String, dynamic>
+          ? AttendanceRecord.fromJson(rawRecord)
+          : null,
+    );
+  }
+}
+
+class CheckInResult {
+  const CheckInResult({
+    required this.attendanceId,
+    required this.date,
+    required this.checkInAt,
+    required this.status,
+    required this.message,
+  });
+
+  final String attendanceId;
+  final DateTime? date;
+  final DateTime? checkInAt;
+  final AttendanceStatus status;
+  final String message;
+
+  factory CheckInResult.fromJson(Map<String, dynamic> json) {
+    return CheckInResult(
+      attendanceId: json['attendanceId']?.toString() ?? '',
+      date: _parseApiDate(json['attendanceDate']),
+      checkInAt: _parseApiDate(json['checkInAtUtc']),
+      status: AttendanceStatus.fromApi(json['status']),
+      message: json['message']?.toString() ?? 'Checked in.',
+    );
+  }
+}
+
+class CheckOutResult {
+  const CheckOutResult({
+    required this.attendanceId,
+    required this.date,
+    required this.checkInAt,
+    required this.checkOutAt,
+    required this.workingDurationMinutes,
+    required this.status,
+    required this.message,
+  });
+
+  final String attendanceId;
+  final DateTime? date;
+  final DateTime? checkInAt;
+  final DateTime? checkOutAt;
+  final int workingDurationMinutes;
+  final AttendanceStatus status;
+  final String message;
+
+  factory CheckOutResult.fromJson(Map<String, dynamic> json) {
+    return CheckOutResult(
+      attendanceId: json['attendanceId']?.toString() ?? '',
+      date: _parseApiDate(json['attendanceDate']),
+      checkInAt: _parseApiDate(json['checkInAtUtc']),
+      checkOutAt: _parseApiDate(json['checkOutAtUtc']),
+      workingDurationMinutes: _asInt(json['workingDurationMinutes']),
+      status: AttendanceStatus.fromApi(json['status']),
+      message: json['message']?.toString() ?? 'Checked out.',
+    );
+  }
+}
+
+class AttendanceHistory {
+  const AttendanceHistory({
+    required this.records,
+    required this.totalCount,
+    required this.page,
+    required this.pageSize,
+    required this.totalPages,
+  });
+
+  final List<AttendanceRecord> records;
+  final int totalCount;
+  final int page;
+  final int pageSize;
+  final int totalPages;
+
+  factory AttendanceHistory.fromJson(Map<String, dynamic> json) {
+    final rawRecords = json['records'];
+    return AttendanceHistory(
+      records: rawRecords is List
+          ? rawRecords
+                .whereType<Map<String, dynamic>>()
+                .map(AttendanceRecord.fromJson)
+                .toList()
+          : const [],
+      totalCount: _asInt(json['totalCount']),
+      page: _asInt(json['page']),
+      pageSize: _asInt(json['pageSize']),
+      totalPages: _asInt(json['totalPages']),
+    );
+  }
+}
+
+class AdminDailyEntry {
+  const AdminDailyEntry({
+    required this.userId,
+    required this.userEmail,
+    required this.userGoal,
+    required this.date,
+    required this.checkInAt,
+    required this.checkOutAt,
+    required this.status,
+    required this.workingDurationMinutes,
+    required this.lateMinutes,
+    required this.hasRecord,
+  });
+
+  final String userId;
+  final String userEmail;
+  final String? userGoal;
+  final DateTime? date;
+  final DateTime? checkInAt;
+  final DateTime? checkOutAt;
+  final AttendanceStatus status;
+  final int workingDurationMinutes;
+  final int lateMinutes;
+  final bool hasRecord;
+
+  factory AdminDailyEntry.fromJson(Map<String, dynamic> json) {
+    return AdminDailyEntry(
+      userId: json['userId']?.toString() ?? '',
+      userEmail: json['userEmail']?.toString() ?? '',
+      userGoal: json['userGoal'] as String?,
+      date: _parseApiDate(json['attendanceDate']),
+      checkInAt: _parseApiDate(json['checkInAtUtc']),
+      checkOutAt: _parseApiDate(json['checkOutAtUtc']),
+      status: AttendanceStatus.fromApi(json['status']),
+      workingDurationMinutes: _asInt(json['workingDurationMinutes']),
+      lateMinutes: _asInt(json['lateMinutes']),
+      hasRecord: json['hasRecord'] == true,
+    );
+  }
+}
+
+class AdminDailyReport {
+  const AdminDailyReport({
+    required this.date,
+    required this.records,
+    required this.totalUsers,
+    required this.presentCount,
+    required this.lateCount,
+    required this.absentCount,
+    required this.onLeaveCount,
+    required this.noRecordCount,
+  });
+
+  final DateTime? date;
+  final List<AdminDailyEntry> records;
+  final int totalUsers;
+  final int presentCount;
+  final int lateCount;
+  final int absentCount;
+  final int onLeaveCount;
+  final int noRecordCount;
+
+  factory AdminDailyReport.fromJson(Map<String, dynamic> json) {
+    final rawRecords = json['records'];
+    return AdminDailyReport(
+      date: _parseApiDate(json['date']),
+      records: rawRecords is List
+          ? rawRecords
+                .whereType<Map<String, dynamic>>()
+                .map(AdminDailyEntry.fromJson)
+                .toList()
+          : const [],
+      totalUsers: _asInt(json['totalUsers']),
+      presentCount: _asInt(json['presentCount']),
+      lateCount: _asInt(json['lateCount']),
+      absentCount: _asInt(json['absentCount']),
+      onLeaveCount: _asInt(json['onLeaveCount']),
+      noRecordCount: _asInt(json['noRecordCount']),
+    );
+  }
+}
+
+class MonthlyAttendanceSummary {
+  const MonthlyAttendanceSummary({
+    required this.year,
+    required this.month,
+    required this.userId,
+    required this.userEmail,
+    required this.workingDaysInMonth,
+    required this.presentDays,
+    required this.lateDays,
+    required this.absentDays,
+    required this.onLeaveDays,
+    required this.incompleteDays,
+    required this.totalWorkingMinutes,
+    required this.attendancePercentage,
+    required this.averageWorkingHoursPerDay,
+  });
+
+  final int year;
+  final int month;
+  final String userId;
+  final String userEmail;
+  final int workingDaysInMonth;
+  final int presentDays;
+  final int lateDays;
+  final int absentDays;
+  final int onLeaveDays;
+  final int incompleteDays;
+  final int totalWorkingMinutes;
+  final double attendancePercentage;
+  final double averageWorkingHoursPerDay;
+
+  factory MonthlyAttendanceSummary.fromJson(Map<String, dynamic> json) {
+    return MonthlyAttendanceSummary(
+      year: _asInt(json['year']),
+      month: _asInt(json['month']),
+      userId: json['userId']?.toString() ?? '',
+      userEmail: json['userEmail']?.toString() ?? '',
+      workingDaysInMonth: _asInt(json['workingDaysInMonth']),
+      presentDays: _asInt(json['presentDays']),
+      lateDays: _asInt(json['lateDays']),
+      absentDays: _asInt(json['absentDays']),
+      onLeaveDays: _asInt(json['onLeaveDays']),
+      incompleteDays: _asInt(json['incompleteDays']),
+      totalWorkingMinutes: _asInt(json['totalWorkingMinutes']),
+      attendancePercentage: _asDouble(json['attendancePercentage']),
+      averageWorkingHoursPerDay: _asDouble(json['averageWorkingHoursPerDay']),
+    );
+  }
+}
+
+class AdminMonthlySummary {
+  const AdminMonthlySummary({
+    required this.year,
+    required this.month,
+    required this.summaries,
+  });
+
+  final int year;
+  final int month;
+  final List<MonthlyAttendanceSummary> summaries;
+
+  factory AdminMonthlySummary.fromJson(Map<String, dynamic> json) {
+    final rawSummaries = json['summaries'];
+    return AdminMonthlySummary(
+      year: _asInt(json['year']),
+      month: _asInt(json['month']),
+      summaries: rawSummaries is List
+          ? rawSummaries
+                .whereType<Map<String, dynamic>>()
+                .map(MonthlyAttendanceSummary.fromJson)
+                .toList()
+          : const [],
+    );
+  }
+}
+
 class HrmApiClient {
-  HrmApiClient({http.Client? client})
-      : _client = client ?? http.Client();
+  HrmApiClient({http.Client? client}) : _client = client ?? http.Client();
 
   static const baseUrl = 'https://hrm-api-tjfa.onrender.com';
   final http.Client _client;
@@ -60,9 +400,9 @@ class HrmApiClient {
   String? _refreshToken;
 
   Map<String, String> get _jsonHeaders => {
-        'Content-Type': 'application/json',
-        if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
-      };
+    'Content-Type': 'application/json',
+    if (_accessToken != null) 'Authorization': 'Bearer $_accessToken',
+  };
 
   Future<AuthSession> login(String email, String password) async {
     final response = await _client
@@ -89,7 +429,10 @@ class HrmApiClient {
     _accessToken = data['accessToken'] as String?;
     _refreshToken = data['refreshToken'] as String?;
     if (_accessToken == null || _refreshToken == null) {
-      throw const ApiException('The API returned an invalid login response.', 502);
+      throw const ApiException(
+        'The API returned an invalid login response.',
+        502,
+      );
     }
 
     final profile = await _getMe();
@@ -104,13 +447,13 @@ class HrmApiClient {
 
   Future<_Profile> _getMe() async {
     final response = await _client
-        .get(
-          Uri.parse('$baseUrl/api/auth/me'),
-          headers: _jsonHeaders,
-        )
+        .get(Uri.parse('$baseUrl/api/auth/me'), headers: _jsonHeaders)
         .timeout(const Duration(seconds: 45));
     if (response.statusCode != 200) {
-      throw ApiException('Unable to load your account permissions.', response.statusCode);
+      throw ApiException(
+        'Unable to load your account permissions.',
+        response.statusCode,
+      );
     }
     final data = _decode(response);
     return _Profile(
@@ -135,17 +478,61 @@ class HrmApiClient {
     }
   }
 
+  /// Asks the API to start a password reset for [email].
+  ///
+  /// The current HR API accepts this request but does not send email yet, so
+  /// the UI follows it with [resetPassword] and states that limitation.
+  Future<void> requestPasswordReset(String email) async {
+    final response = await _client
+        .post(
+          Uri.parse('$baseUrl/api/auth/forgot-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'email': email.trim()}),
+        )
+        .timeout(const Duration(seconds: 45));
+    _throwIfNotSuccessful(
+      response,
+      _serverMessage(response) ?? 'Unable to start a password reset.',
+    );
+  }
+
+  /// Sets a new password using the API's reset endpoint.
+  ///
+  /// [resetToken] comes from the reset email and is single-use.
+  Future<void> resetPassword({
+    required String email,
+    required String newPassword,
+    required String resetToken,
+  }) async {
+    final response = await _client
+        .post(
+          Uri.parse('$baseUrl/api/auth/reset-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email.trim(),
+            'newPassword': newPassword,
+            'resetToken': resetToken.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+    _throwIfNotSuccessful(
+      response,
+      _serverMessage(response) ?? 'Unable to reset your password.',
+    );
+  }
+
   Future<List<ApiRole>> listRoles() async {
     final response = await _authorizedRequest(
-      (headers) => _client.get(Uri.parse('$baseUrl/api/rbac/roles'), headers: headers),
+      (headers) =>
+          _client.get(Uri.parse('$baseUrl/api/rbac/roles'), headers: headers),
     );
     _throwIfNotSuccessful(response, 'Unable to load roles.');
     final data = _decodeList(response);
     return data
-        .map((item) => ApiRole(
-              id: item['id'] as String,
-              name: item['name'] as String,
-            ))
+        .map(
+          (item) =>
+              ApiRole(id: item['id'] as String, name: item['name'] as String),
+        )
         .toList();
   }
 
@@ -159,12 +546,14 @@ class HrmApiClient {
     _throwIfNotSuccessful(response, 'Unable to load accounts.');
     final data = _decode(response)['items'] as List<dynamic>? ?? const [];
     return data
-        .map((item) => ApiUser(
-              id: item['id'] as String,
-              email: item['email'] as String,
-              roles: _stringList(item['roles']),
-              status: item['status'] as String? ?? 'Unknown',
-            ))
+        .map(
+          (item) => ApiUser(
+            id: item['id'] as String,
+            email: item['email'] as String,
+            roles: _stringList(item['roles']),
+            status: item['status'] as String? ?? 'Unknown',
+          ),
+        )
         .toList();
   }
 
@@ -187,6 +576,125 @@ class HrmApiClient {
       ),
     );
     _throwIfNotSuccessful(response, 'Unable to remove the previous role.');
+  }
+
+  // ============ ATTENDANCE ============
+
+  Future<TodayAttendance> getTodayAttendance() async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/attendance/my/today'),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load today’s attendance.');
+    return TodayAttendance.fromJson(_decode(response));
+  }
+
+  Future<AttendanceHistory> getMyAttendance({
+    DateTime? from,
+    DateTime? to,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final query = <String, String>{
+      'page': '$page',
+      'pageSize': '$pageSize',
+      if (from != null) 'from': _formatApiDate(from),
+      if (to != null) 'to': _formatApiDate(to),
+    };
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/attendance/my').replace(queryParameters: query),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load your attendance history.');
+    return AttendanceHistory.fromJson(_decode(response));
+  }
+
+  Future<CheckInResult> checkIn({String? notes}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/attendance/check-in'),
+        headers: headers,
+        body: jsonEncode({'notes': notes}),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to check in.');
+    return CheckInResult.fromJson(_decode(response));
+  }
+
+  Future<CheckOutResult> checkOut({String? notes}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/attendance/check-out'),
+        headers: headers,
+        body: jsonEncode({'notes': notes}),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to check out.');
+    return CheckOutResult.fromJson(_decode(response));
+  }
+
+  Future<AdminDailyReport> getAdminDailyReport(DateTime date) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/attendance/admin/daily')
+            .replace(queryParameters: {'date': _formatApiDate(date)}),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(
+      response,
+      'Unable to load the daily attendance report.',
+    );
+    return AdminDailyReport.fromJson(_decode(response));
+  }
+
+  Future<AdminMonthlySummary> getAdminMonthlySummary({
+    required int year,
+    required int month,
+  }) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/attendance/admin/summary')
+            .replace(queryParameters: {'year': '$year', 'month': '$month'}),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load the monthly summary.');
+    return AdminMonthlySummary.fromJson(_decode(response));
+  }
+
+  Future<List<AttendanceRecord>> getUserAttendance(
+    String userId, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final query = <String, String>{
+      if (from != null) 'from': _formatApiDate(from),
+      if (to != null) 'to': _formatApiDate(to),
+    };
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/attendance/admin/users/$userId')
+            .replace(queryParameters: query.isEmpty ? null : query),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(
+      response,
+      'Unable to load that employee’s attendance.',
+    );
+    final data = _decode(response);
+    final records = data['records'];
+    return records is List
+        ? records
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceRecord.fromJson)
+              .toList()
+        : const [];
   }
 
   Future<http.Response> _authorizedRequest(
@@ -227,22 +735,66 @@ class HrmApiClient {
   List<Map<String, dynamic>> _decodeList(http.Response response) {
     final decoded = jsonDecode(response.body);
     if (decoded is! List) {
-      throw const ApiException('The API returned an invalid list response.', 502);
+      throw const ApiException(
+        'The API returned an invalid list response.',
+        502,
+      );
     }
     return decoded.whereType<Map<String, dynamic>>().toList();
   }
 
   void _throwIfNotSuccessful(http.Response response, String fallback) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        response.statusCode == 403 ? 'You do not have permission to do that.' : fallback,
-        response.statusCode,
-      );
+      final message = response.statusCode == 403
+          ? 'You do not have permission to do that.'
+          : (_serverMessage(response) ?? fallback);
+      throw ApiException(message, response.statusCode);
     }
+  }
+
+  String? _serverMessage(http.Response response) {
+    if (response.body.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is String && decoded.trim().isNotEmpty) return decoded.trim();
+      if (decoded is Map<String, dynamic>) {
+        for (final key in const ['message', 'detail', 'error', 'title']) {
+          final value = decoded[key];
+          if (value is String && value.trim().isNotEmpty) return value.trim();
+        }
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
   }
 
   static List<String> _stringList(Object? value) =>
       value is List ? value.whereType<String>().toList() : const [];
+}
+
+DateTime? _parseApiDate(Object? value) {
+  if (value == null) return null;
+  return DateTime.tryParse(value.toString());
+}
+
+int _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _asDouble(Object? value) {
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _formatApiDate(DateTime date) {
+  final year = date.year.toString().padLeft(4, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
 }
 
 class _Profile {
