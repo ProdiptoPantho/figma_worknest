@@ -1070,38 +1070,49 @@ class HrmApiClient {
     required DateTime endDate,
     String? reason,
   }) async {
-    // 1. Try POST /api/leave/apply (Render backend endpoint)
-    try {
-      final response = await _authorizedRequest(
-        (headers) => _client.post(
-          Uri.parse('$baseUrl/api/leave/apply'),
-          headers: headers,
-          body: jsonEncode({
-            'leaveType': leaveType,
-            'startDate': _formatApiDate(startDate),
-            'endDate': _formatApiDate(endDate),
-            'reason': reason,
-          }),
-        ),
-      );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return LeaveRequestRecord.fromJson(_decode(response));
-      }
-    } catch (_) {}
+    final effectiveReason = (reason != null && reason.trim().isNotEmpty)
+        ? reason.trim()
+        : '$leaveType leave';
 
-    // 2. Fallback to /api/leave/requests
+    // 1. Try POST /api/leave/apply (Render backend endpoint)
     final response = await _authorizedRequest(
       (headers) => _client.post(
-        Uri.parse('$baseUrl/api/leave/requests'),
+        Uri.parse('$baseUrl/api/leave/apply'),
         headers: headers,
         body: jsonEncode({
           'leaveType': leaveType,
           'startDate': _formatApiDate(startDate),
           'endDate': _formatApiDate(endDate),
-          'reason': reason,
+          'reason': effectiveReason,
         }),
       ),
     );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return LeaveRequestRecord.fromJson(_decode(response));
+    }
+
+    // 2. If endpoint not found (404), fallback to /api/leave/requests
+    if (response.statusCode == 404) {
+      final fallbackResponse = await _authorizedRequest(
+        (headers) => _client.post(
+          Uri.parse('$baseUrl/api/leave/requests'),
+          headers: headers,
+          body: jsonEncode({
+            'leaveType': leaveType,
+            'startDate': _formatApiDate(startDate),
+            'endDate': _formatApiDate(endDate),
+            'reason': effectiveReason,
+          }),
+        ),
+      );
+      _throwIfNotSuccessful(
+        fallbackResponse,
+        'Unable to submit the leave request.',
+      );
+      return LeaveRequestRecord.fromJson(_decode(fallbackResponse));
+    }
+
+    // Throw actual backend error (e.g. 400 Bad Request: overlapping dates, etc.)
     _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
     return LeaveRequestRecord.fromJson(_decode(response));
   }

@@ -5201,12 +5201,14 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
       _error = null;
     });
     try {
-      final reason = _reasonController.text.trim();
+      final rawReason = _reasonController.text.trim();
+      final reason =
+          rawReason.isNotEmpty ? rawReason : '${type.leaveType} leave';
       await widget.api.requestLeave(
         leaveType: type.leaveType,
         startDate: start,
         endDate: end,
-        reason: reason.isEmpty ? null : reason,
+        reason: reason,
       );
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
@@ -5232,8 +5234,10 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return AlertDialog(
-      backgroundColor: Colors.white,
+      backgroundColor: theme.cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
@@ -5244,22 +5248,22 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF7F4),
+              color: isDark ? const Color(0xFF163238) : const Color(0xFFEAF7F4),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.beach_access_outlined,
               size: 18,
-              color: Color(0xFF2A7C68),
+              color: isDark ? const Color(0xFF59CDB6) : const Color(0xFF2A7C68),
             ),
           ),
           const SizedBox(width: 11),
-          const Text(
+          Text(
             'Request leave',
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF103A48),
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
             ),
           ),
         ],
@@ -5488,7 +5492,9 @@ class _LeaveDateField extends StatelessWidget {
             fontSize: 12,
             color: value == null
                 ? const Color(0xFF9AA7AC)
-                : const Color(0xFF41555D),
+                : (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFF1F5F9)
+                    : const Color(0xFF41555D)),
           ),
         ),
       ),
