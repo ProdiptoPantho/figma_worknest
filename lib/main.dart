@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api_client.dart';
+import 'document_picker.dart';
 
 void main() {
   runApp(const WorknestApp());
@@ -5036,13 +5037,80 @@ class _LeaveRequestTile extends StatelessWidget {
           ),
           if (request.reason != null && request.reason!.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(
-              request.reason!,
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: Color(0xFF60717A),
-                height: 1.4,
-              ),
+            Builder(
+              builder: (context) {
+                final reason = request.reason!;
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                if (reason.contains('[Document:')) {
+                  final start = reason.indexOf('[Document:');
+                  final end = reason.indexOf(']', start);
+                  final docInfo = end > start
+                      ? reason.substring(start + 10, end).trim()
+                      : reason.substring(start + 10).trim();
+                  final note = (reason.substring(0, start) +
+                          (end > start && end + 1 < reason.length
+                              ? reason.substring(end + 1)
+                              : ''))
+                      .trim();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (note.isNotEmpty)
+                        Text(
+                          note,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF60717A),
+                            height: 1.4,
+                          ),
+                        ),
+                      if (docInfo.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF162530) : const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF1E3A40) : const Color(0xFFBBF7D0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.attach_file_rounded,
+                                size: 13,
+                                color: Color(0xFF2A9A75),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  docInfo,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF2A9A75),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                }
+                return Text(
+                  reason,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF60717A),
+                    height: 1.4,
+                  ),
+                );
+              },
             ),
           ],
           if (onApprove != null && onReject != null) ...[
@@ -5103,9 +5171,89 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
   LeaveTypeInfo? _type;
   DateTime? _start;
   DateTime? _end;
+  AttachedDocument? _attachment;
   bool _loadingTypes = true;
   bool _busy = false;
   String? _error;
+
+  Future<void> _attachFile() async {
+    try {
+      final doc = await pickDocumentFile();
+      if (doc != null && mounted) {
+        setState(() => _attachment = doc);
+        return;
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    final textController = TextEditingController(text: 'Medical_Certificate.pdf');
+    final pickedName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Attach document', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Select a document preset or enter the filename:',
+              style: TextStyle(fontSize: 12, color: Color(0xFF60717A)),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ActionChip(
+                  label: const Text('Medical_Certificate.pdf', style: TextStyle(fontSize: 11)),
+                  onPressed: () => Navigator.of(ctx).pop('Medical_Certificate.pdf'),
+                ),
+                ActionChip(
+                  label: const Text('Doctors_Prescription.jpg', style: TextStyle(fontSize: 11)),
+                  onPressed: () => Navigator.of(ctx).pop('Doctors_Prescription.jpg'),
+                ),
+                ActionChip(
+                  label: const Text('Travel_Ticket.pdf', style: TextStyle(fontSize: 11)),
+                  onPressed: () => Navigator.of(ctx).pop('Travel_Ticket.pdf'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textController,
+              decoration: const InputDecoration(
+                labelText: 'Document filename',
+                hintText: 'e.g. medical_note.pdf',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final t = textController.text.trim();
+              Navigator.of(ctx).pop(t.isNotEmpty ? t : null);
+            },
+            child: const Text('Attach'),
+          ),
+        ],
+      ),
+    );
+    if (pickedName != null && pickedName.trim().isNotEmpty && mounted) {
+      setState(() {
+        _attachment = AttachedDocument(
+          name: pickedName.trim(),
+          sizeDisplay: '240 KB',
+        );
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -5202,13 +5350,14 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
     });
     try {
       final rawReason = _reasonController.text.trim();
-      final reason =
-          rawReason.isNotEmpty ? rawReason : '${type.leaveType} leave';
+            final fullReason = _attachment != null
+          ? '$rawReason\n[Document: ${_attachment!.name} (${_attachment!.sizeDisplay})]'
+          : rawReason;
       await widget.api.requestLeave(
         leaveType: type.leaveType,
         startDate: start,
         endDate: end,
-        reason: reason,
+        reason: fullReason,
       );
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
@@ -5419,14 +5568,137 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
                       maxLength: 500,
                       textInputAction: TextInputAction.done,
                       decoration: const InputDecoration(
-                        labelText: 'Reason (optional)',
-                        hintText: 'Add context for your reviewer',
+                        labelText: 'Reason *',
+                        hintText: 'Please describe the reason for your leave (required)',
                         prefixIcon: Icon(Icons.notes_rounded),
+                        helperText: 'Required for manager review & approval',
                       ),
+                      validator: (val) {
+                        final trimmed = val?.trim() ?? '';
+                        if (trimmed.isEmpty) {
+                          return 'Please provide a reason for your leave request.';
+                        }
+                        if (trimmed.length < 3) {
+                          return 'Reason must be at least 3 characters.';
+                        }
+                        return null;
+                      },
                       onFieldSubmitted: (_) {
                         if (!_busy) _submit();
                       },
                     ),
+                    const SizedBox(height: 10),
+                    if (_attachment != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF162530) : const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF1E3A40) : const Color(0xFFBBF7D0),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2A9A75).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(
+                                Icons.description_rounded,
+                                size: 18,
+                                color: Color(0xFF2A9A75),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _attachment!.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${_attachment!.sizeDisplay} • Attached document',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6E8087),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              tooltip: 'Remove document',
+                              color: const Color(0xFFB05B68),
+                              onPressed: _busy ? null : () => setState(() => _attachment = null),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      InkWell(
+                        onTap: _busy ? null : _attachFile,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF16202E) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.attach_file_rounded,
+                                size: 18,
+                                color: isDark ? const Color(0xFF59CDB6) : const Color(0xFF103A48),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Add document / attachment',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+                                      ),
+                                    ),
+                                    Text(
+                                      'PDF, DOCX, JPG or PNG (e.g. medical certificate, tickets)',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF8A999E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.upload_file_rounded,
+                                size: 16,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6E8087),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_error != null) ...[
                       const SizedBox(height: 6),
                       Text(

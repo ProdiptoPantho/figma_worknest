@@ -236,6 +236,39 @@ void main() {
 
     expect(find.text('Light theme'), findsOneWidget);
   });
+
+  testWidgets('request leave dialog enforces mandatory reason', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New request'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Request leave'), findsOneWidget);
+    expect(find.text('Reason *'), findsOneWidget);
+    expect(find.text('Add document / attachment'), findsOneWidget);
+
+    // Try submitting without reason
+    await tester.tap(find.text('Submit request'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Please provide a reason for your leave request.'),
+      findsOneWidget,
+    );
+    expect(api.leaveRequestCalls, 0);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
