@@ -50,6 +50,11 @@ A responsive, production-ready **Human Resource Management (HRM) and Employee Op
 - **Password Reset:** Tokenized forgot-password and reset link handler with deep-linking support (`/reset-password`).
 - **Role Enforcement:** UI navigation adapts dynamically according to decoded session permissions.
 
+### 6. 🌙 Dark Theme & Accessible UI
+- **One-Click Theme Toggle:** Seamlessly switch between Light and Dark mode from the sidebar or mobile header.
+- **Tailored Contrast Palette:** Custom deep slate surfaces (#0F172A, #1E293B, #334155) paired with high-contrast typography and subtle tinted overlays.
+- **Adaptive Components:** All panels, metric cards, leave request tiles, employee task cards, and summary counters automatically restyle to match the active theme.
+
 ---
 
 ## 🛠️ Technology Stack

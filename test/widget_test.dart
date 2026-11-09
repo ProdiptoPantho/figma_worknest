@@ -218,6 +218,24 @@ void main() {
     expect(api.resetEmail, 'user3@company.com');
     expect(api.resetTokenValue, 'link-reset-token');
   });
+
+  testWidgets('toggle dark theme switches application theme mode', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(WorknestApp(api: _FakeApiClient()));
+    await _signIn(tester);
+
+    expect(find.text('Dark theme'), findsOneWidget);
+    await tester.tap(find.text('Dark theme'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Light theme'), findsOneWidget);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {

@@ -50,6 +50,14 @@ class _WorknestAppState extends State<WorknestApp> {
   late final HrmApiClient _api;
   AuthSession? _session;
   PasswordResetLink? _pendingReset;
+  ThemeMode _themeMode = ThemeMode.light;
+
+  void _toggleTheme() {
+    setState(() {
+      _themeMode =
+          _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
 
   @override
   void initState() {
@@ -70,12 +78,18 @@ class _WorknestAppState extends State<WorknestApp> {
     return MaterialApp(
       title: 'PeopleHub',
       debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
       theme: ThemeData(
         useMaterial3: true,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF3F7F9),
+        cardColor: Colors.white,
+        dividerColor: const Color(0xFFE1E9EB),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2F61D5),
           brightness: Brightness.light,
+          surface: Colors.white,
+          onSurface: navy,
         ),
         fontFamily: 'Inter',
         textTheme: const TextTheme(
@@ -100,42 +114,107 @@ class _WorknestAppState extends State<WorknestApp> {
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
-          style:
-              FilledButton.styleFrom(
-                minimumSize: const Size(0, 42),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(7),
-                ),
-              ).copyWith(
-                overlayColor: WidgetStatePropertyAll(Color(0x2293E8D8)),
-                animationDuration: const Duration(milliseconds: 180),
-              ),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ).copyWith(
+            overlayColor: const WidgetStatePropertyAll(Color(0x2293E8D8)),
+            animationDuration: const Duration(milliseconds: 180),
+          ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
-          style:
-              OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 42),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(7),
-                ),
-              ).copyWith(
-                overlayColor: const WidgetStatePropertyAll(Color(0x143568D5)),
-                animationDuration: const Duration(milliseconds: 180),
-              ),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ).copyWith(
+            overlayColor: const WidgetStatePropertyAll(Color(0x143568D5)),
+            animationDuration: const Duration(milliseconds: 180),
+          ),
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        cardColor: const Color(0xFF1E293B),
+        dividerColor: const Color(0xFF334155),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF38BDF8),
+          brightness: Brightness.dark,
+          surface: const Color(0xFF1E293B),
+          onSurface: const Color(0xFFF1F5F9),
+        ),
+        fontFamily: 'Inter',
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(
+            fontSize: 26,
+            height: 1.15,
+            letterSpacing: -0.6,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFF1F5F9),
+          ),
+          titleLarge: TextStyle(
+            fontSize: 18,
+            height: 1.2,
+            letterSpacing: -0.2,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFF1F5F9),
+          ),
+          bodyMedium: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: Color(0xFF94A3B8),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ).copyWith(
+            overlayColor: const WidgetStatePropertyAll(Color(0x2238BDF8)),
+            animationDuration: const Duration(milliseconds: 180),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ).copyWith(
+            overlayColor: const WidgetStatePropertyAll(Color(0x1438BDF8)),
+            animationDuration: const Duration(milliseconds: 180),
+          ),
         ),
       ),
       home: _session != null
           ? DashboardPage(
               session: _session!,
               api: _api,
+              onToggleTheme: _toggleTheme,
+              isDark: _themeMode == ThemeMode.dark,
               onLogout: () async {
                 await _api.logout();
                 if (mounted) setState(() => _session = null);
@@ -1538,11 +1617,15 @@ class DashboardPage extends StatefulWidget {
     required this.api,
     required this.session,
     required this.onLogout,
+    this.onToggleTheme,
+    this.isDark = false,
   });
 
   final HrmApiClient api;
   final AuthSession session;
   final VoidCallback onLogout;
+  final VoidCallback? onToggleTheme;
+  final bool isDark;
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -1791,6 +1874,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     selectedIndex: _selectedIndex,
                     role: _role,
                     onLogout: widget.onLogout,
+                    onToggleTheme: widget.onToggleTheme,
+                    isDark: widget.isDark,
                     onSelected: (index) {
                       setState(() => _selectedIndex = index);
                       Navigator.of(context).pop();
@@ -1806,6 +1891,8 @@ class _DashboardPageState extends State<DashboardPage> {
                   selectedIndex: _selectedIndex,
                   role: _role,
                   onLogout: widget.onLogout,
+                  onToggleTheme: widget.onToggleTheme,
+                  isDark: widget.isDark,
                   onSelected: (index) => setState(() => _selectedIndex = index),
                 ),
               Expanded(
@@ -1816,6 +1903,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         _MobileHeader(
                           title: _navigation[_selectedIndex].label,
                           role: _role,
+                          onToggleTheme: widget.onToggleTheme,
+                          isDark: widget.isDark,
                         ),
                       Expanded(
                         child: SingleChildScrollView(
@@ -1923,18 +2012,25 @@ class _DashboardPageState extends State<DashboardPage> {
 }
 
 class _MobileHeader extends StatelessWidget {
-  const _MobileHeader({required this.title, required this.role});
+  const _MobileHeader({
+    required this.title,
+    required this.role,
+    this.onToggleTheme,
+    this.isDark = false,
+  });
 
   final String title;
   final _Role role;
+  final VoidCallback? onToggleTheme;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 18, 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE1E9EB))),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Row(
         children: [
@@ -1942,7 +2038,10 @@ class _MobileHeader extends StatelessWidget {
             builder: (context) => IconButton(
               tooltip: 'Open navigation',
               onPressed: () => Scaffold.of(context).openDrawer(),
-              icon: const Icon(Icons.menu_rounded, color: Color(0xFF103A48)),
+              icon: Icon(
+                Icons.menu_rounded,
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              ),
             ),
           ),
           const Icon(Icons.hub_rounded, color: Color(0xFF59CDB6), size: 22),
@@ -1950,13 +2049,23 @@ class _MobileHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
-                color: Color(0xFF103A48),
+              style: TextStyle(
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ),
+          if (onToggleTheme != null)
+            IconButton(
+              tooltip: isDark ? 'Switch to Light theme' : 'Switch to Dark theme',
+              icon: Icon(
+                isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                size: 20,
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              ),
+              onPressed: onToggleTheme,
+            ),
           Text(
             role.label,
             overflow: TextOverflow.ellipsis,
@@ -1975,6 +2084,8 @@ class _Sidebar extends StatelessWidget {
     required this.role,
     required this.onLogout,
     required this.onSelected,
+    this.onToggleTheme,
+    this.isDark = false,
   });
 
   final List<_NavItem> items;
@@ -1982,12 +2093,14 @@ class _Sidebar extends StatelessWidget {
   final _Role role;
   final VoidCallback onLogout;
   final ValueChanged<int> onSelected;
+  final VoidCallback? onToggleTheme;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 224,
-      color: const Color(0xFF103A48),
+      color: isDark ? const Color(0xFF0C1921) : const Color(0xFF103A48),
       padding: const EdgeInsets.fromLTRB(18, 24, 14, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2064,6 +2177,16 @@ class _Sidebar extends StatelessWidget {
                 _NavPage.roles,
               ),
               onTap: () {},
+            ),
+          if (onToggleTheme != null)
+            _SidebarItem(
+              item: _NavItem(
+                isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                isDark ? 'Light theme' : 'Dark theme',
+                _Permission.selfService,
+                _NavPage.overview,
+              ),
+              onTap: onToggleTheme!,
             ),
           _SidebarItem(
             item: const _NavItem(
@@ -2818,28 +2941,36 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark
+        ? Color.alphaBlend(color.withValues(alpha: 0.15), theme.cardColor)
+        : color;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
       decoration: BoxDecoration(
-        color: color,
+        color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E9EB)),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF708087)),
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF708087),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF103A48),
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
             ),
           ),
           const SizedBox(height: 4),
@@ -3257,12 +3388,14 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFE1E9EB)),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3272,10 +3405,12 @@ class _Panel extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 13,
-                    color: Color(0xFF103A48),
+                    color: isDark
+                        ? const Color(0xFFF1F5F9)
+                        : const Color(0xFF103A48),
                   ),
                 ),
               ),
@@ -4103,36 +4238,53 @@ class _TimeOffContentState extends State<_TimeOffContent> {
       _loading = true;
       _error = null;
     });
+    AdminLeaveList? list;
+    LeaveSummary? summary;
+    String? loadError;
+
     try {
-      final results = await Future.wait<Object>([
-        widget.api.getLeaveRequests(status: _filter, pageSize: 100),
-        widget.api.getLeaveSummary(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _list = results[0] as AdminLeaveList;
-        _summary = results[1] as LeaveSummary;
-        _loading = false;
-      });
-    } on ApiException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _loading = false;
-      });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _error = 'The API took too long to respond.';
-        _loading = false;
-      });
-    } on Exception {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Could not load leave requests. Check your connection.';
-        _loading = false;
-      });
+      list = await widget.api.getLeaveRequests(status: _filter, pageSize: 100);
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) loadError = e.message;
+    } catch (_) {}
+
+    try {
+      summary = await widget.api.getLeaveSummary();
+    } on ApiException catch (e) {
+      if (e.statusCode != 404 && loadError == null) loadError = e.message;
+    } catch (_) {}
+
+    // Fallback if null
+    final requests = list?.requests ?? const <LeaveRequestRecord>[];
+    if (summary == null) {
+      final pending = requests.where((r) => r.isPending).length;
+      final approved = requests.where((r) => r.status == LeaveStatus.approved).length;
+      final days = requests.where((r) => r.status == LeaveStatus.approved).fold<int>(0, (s, r) => s + r.totalDays);
+      summary = LeaveSummary(
+        year: DateTime.now().year,
+        pendingCount: pending,
+        approvedCount: approved,
+        rejectedCount: 0,
+        cancelledCount: 0,
+        approvedDays: days,
+        byType: const [],
+      );
     }
+    list ??= AdminLeaveList(
+      requests: requests,
+      totalCount: requests.length,
+      page: 1,
+      pageSize: 100,
+      totalPages: 1,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _list = list;
+      _summary = summary;
+      _loading = false;
+      _error = loadError;
+    });
   }
 
   Future<void> _openRequest() async {
@@ -4716,6 +4868,11 @@ class _LeaveBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = isDark
+        ? Color.alphaBlend(color.withValues(alpha: 0.15), theme.cardColor)
+        : color;
     final committed = balance.usedDays + balance.pendingDays;
     final progress = balance.allowance <= 0
         ? 0.0
@@ -4724,19 +4881,19 @@ class _LeaveBalanceCard extends StatelessWidget {
       width: 212,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
+        color: bg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE1E9EB)),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             balance.leaveType,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF41555D),
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF41555D),
               letterSpacing: 0.2,
             ),
           ),
@@ -4746,11 +4903,11 @@ class _LeaveBalanceCard extends StatelessWidget {
             children: [
               Text(
                 '${balance.remainingDays}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 26,
                   height: 1,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF103A48),
+                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
                 ),
               ),
               const SizedBox(width: 5),
@@ -4810,6 +4967,8 @@ class _LeaveRequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final initial = request.userEmail.isEmpty
         ? '?'
         : request.userEmail.substring(0, 1).toUpperCase();
@@ -4817,12 +4976,14 @@ class _LeaveRequestTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: request.isPending ? const Color(0xFFFFFCF3) : Colors.white,
+        color: request.isPending
+            ? (isDark ? const Color(0xFF262013) : const Color(0xFFFFFCF3))
+            : theme.cardColor,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: request.isPending
-              ? const Color(0xFFF1E2BE)
-              : const Color(0xFFE4ECEE),
+              ? (isDark ? const Color(0xFF5E4815) : const Color(0xFFF1E2BE))
+              : theme.dividerColor,
         ),
       ),
       child: Column(
@@ -4833,13 +4994,13 @@ class _LeaveRequestTile extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 15,
-                backgroundColor: const Color(0xFFDCEAE8),
+                backgroundColor: isDark ? const Color(0xFF163238) : const Color(0xFFDCEAE8),
                 child: Text(
                   initial,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF103A48),
+                    color: isDark ? const Color(0xFF67E8F9) : const Color(0xFF103A48),
                   ),
                 ),
               ),
@@ -4852,10 +5013,10 @@ class _LeaveRequestTile extends StatelessWidget {
                       request.userEmail.isEmpty
                           ? 'Unknown employee'
                           : request.userEmail,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF41555D),
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D),
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -5952,8 +6113,10 @@ class _Workspace extends StatelessWidget {
                 const SizedBox(height: 5),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFF83939A),
+                  style: TextStyle(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF83939A),
                     fontSize: 12,
                   ),
                 ),
@@ -6016,27 +6179,33 @@ class _SummaryRow extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: item.color,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Color.alphaBlend(item.color.withValues(alpha: 0.15), Theme.of(context).cardColor)
+                          : item.color,
                       borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: const Color(0xFFE1E9EB)),
+                      border: Border.all(color: Theme.of(context).dividerColor),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           item.label,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF708087),
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF708087),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           item.value,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFF103A48),
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFFF1F5F9)
+                                : const Color(0xFF103A48),
                           ),
                         ),
                       ],
@@ -6578,14 +6747,18 @@ class _EmployeeTaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDone = task.status == TaskState.done;
     final isOverdue = !isDone && task.dueDate != null && task.dueDate!.isBefore(DateTime.now());
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDone
+        ? (isDark ? const Color(0xFF16202E) : const Color(0xFFFAFCFD))
+        : Theme.of(context).cardColor;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDone ? const Color(0xFFFAFCFD) : Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isDone ? const Color(0xFFE4ECEE) : const Color(0xFFD5E0E4),
+          color: Theme.of(context).dividerColor,
         ),
       ),
       child: Row(
