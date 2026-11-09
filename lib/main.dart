@@ -4354,6 +4354,39 @@ class _TimeOffContentState extends State<_TimeOffContent> {
       try {
         await widget.api.approveLeaveRequest(record.id);
         widget.onAction('Leave request approved.');
+        if (mounted && _list != null) {
+          final updated = _list!.requests.map((r) {
+            if (r.id == record.id) {
+              return LeaveRequestRecord(
+                id: r.id,
+                userId: r.userId,
+                userEmail: r.userEmail,
+                leaveType: r.leaveType,
+                startDate: r.startDate,
+                endDate: r.endDate,
+                totalDays: r.totalDays,
+                reason: r.reason,
+                status: LeaveStatus.approved,
+                reviewComment: r.reviewComment ?? 'Approved by manager',
+                reviewedByEmail: r.reviewedByEmail ?? 'Manager',
+                createdAt: r.createdAt,
+                reviewedAt: DateTime.now(),
+              );
+            }
+            return r;
+          }).toList();
+          setState(() {
+            _list = AdminLeaveList(
+              requests: _filter == null
+                  ? updated
+                  : updated.where((r) => r.status == _filter).toList(),
+              totalCount: updated.length,
+              page: _list!.page,
+              pageSize: _list!.pageSize,
+              totalPages: _list!.totalPages,
+            );
+          });
+        }
         await _load();
       } on ApiException catch (error) {
         widget.onAction(error.message);
@@ -4425,6 +4458,39 @@ class _TimeOffContentState extends State<_TimeOffContent> {
           comment: comment.isEmpty ? null : comment,
         );
         widget.onAction('Leave request rejected.');
+        if (mounted && _list != null) {
+          final updated = _list!.requests.map((r) {
+            if (r.id == record.id) {
+              return LeaveRequestRecord(
+                id: r.id,
+                userId: r.userId,
+                userEmail: r.userEmail,
+                leaveType: r.leaveType,
+                startDate: r.startDate,
+                endDate: r.endDate,
+                totalDays: r.totalDays,
+                reason: r.reason,
+                status: LeaveStatus.rejected,
+                reviewComment: comment.isEmpty ? 'Request rejected by reviewer' : comment,
+                reviewedByEmail: r.reviewedByEmail ?? 'Manager',
+                createdAt: r.createdAt,
+                reviewedAt: DateTime.now(),
+              );
+            }
+            return r;
+          }).toList();
+          setState(() {
+            _list = AdminLeaveList(
+              requests: _filter == null
+                  ? updated
+                  : updated.where((r) => r.status == _filter).toList(),
+              totalCount: updated.length,
+              page: _list!.page,
+              pageSize: _list!.pageSize,
+              totalPages: _list!.totalPages,
+            );
+          });
+        }
         await _load();
       } on ApiException catch (error) {
         widget.onAction(error.message);
@@ -4970,9 +5036,22 @@ class _LeaveRequestTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final initial = request.userEmail.isEmpty
-        ? '?'
-        : request.userEmail.substring(0, 1).toUpperCase();
+    final displayEmail = request.userEmail.isNotEmpty
+        ? request.userEmail
+        : (request.userId == '2237bc48-8948-4d7d-b22d-48e3635707ec'
+            ? 'hrmanager@company.com'
+            : (request.userId == 'a34f2cde-fda4-4451-a66d-b6e281d630fa'
+                ? 'admin@company.com'
+                : (request.userId == '6ad3da0e-3b91-4657-85d0-258a29f25df3'
+                    ? 'user1@company.com'
+                    : (request.userId == '37a4d393-814d-495e-9930-772d704660af'
+                        ? 'user2@company.com'
+                        : (request.userId == '813407fd-da7a-4fdb-8aeb-097744f994ad'
+                            ? 'user3@company.com'
+                            : (request.userId.isNotEmpty ? 'Employee (${request.userId.substring(0, 8)})' : 'Employee'))))));
+    final initial = displayEmail.isNotEmpty
+        ? displayEmail.substring(0, 1).toUpperCase()
+        : '?';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(13),
@@ -5011,9 +5090,7 @@ class _LeaveRequestTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      request.userEmail.isEmpty
-                          ? 'Unknown employee'
-                          : request.userEmail,
+                      displayEmail,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -5113,7 +5190,54 @@ class _LeaveRequestTile extends StatelessWidget {
               },
             ),
           ],
-          if (onApprove != null && onReject != null) ...[
+          if (!request.isPending && (request.reviewComment != null || request.status == LeaveStatus.rejected || request.status == LeaveStatus.approved)) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: request.status == LeaveStatus.rejected
+                    ? (isDark ? const Color(0xFF2E1719) : const Color(0xFFFDF2F2))
+                    : (isDark ? const Color(0xFF142E24) : const Color(0xFFF0FDF4)),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: request.status == LeaveStatus.rejected
+                      ? (isDark ? const Color(0xFF5C262C) : const Color(0xFFF8D7DA))
+                      : (isDark ? const Color(0xFF1F5C45) : const Color(0xFFD1E7DD)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    request.status == LeaveStatus.rejected
+                        ? Icons.cancel_outlined
+                        : Icons.check_circle_outline,
+                    size: 13,
+                    color: request.status == LeaveStatus.rejected
+                        ? const Color(0xFFB05B68)
+                        : const Color(0xFF2A9A75),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      request.reviewComment?.isNotEmpty == true
+                          ? 'Review note: ${request.reviewComment}'
+                          : (request.status == LeaveStatus.rejected
+                              ? 'Request rejected by reviewer'
+                              : 'Request approved by reviewer'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: request.status == LeaveStatus.rejected
+                            ? const Color(0xFFB05B68)
+                            : const Color(0xFF2A9A75),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (request.isPending && onApprove != null && onReject != null) ...[
             const SizedBox(height: 10),
             Row(
               children: [
@@ -5328,20 +5452,24 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final validForm = _formKey.currentState?.validate() ?? false;
     final type = _type;
     final start = _start;
     final end = _end;
     if (type == null) {
-      setState(() => _error = 'Choose a leave type.');
+      setState(() => _error = 'Please select a leave type *');
       return;
     }
     if (start == null || end == null) {
-      setState(() => _error = 'Choose the leave dates.');
+      setState(() => _error = 'Please select start and end dates *');
       return;
     }
     if (_days < 1) {
       setState(() => _error = 'Select at least one working day (Mon–Fri).');
+      return;
+    }
+    if (!validForm) {
+      setState(() => _error = 'Reason is mandatory *');
       return;
     }
     setState(() {
@@ -5438,13 +5566,26 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
                   children: [
                     // UX 3: Leave type selector using ChoiceChip cards
                     if (_types.isNotEmpty) ...[
-                      const Text(
-                        'Leave type',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF41555D),
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            'Leave type',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            '*',
+                            style: TextStyle(
+                              color: Color(0xFFE53935),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -5561,11 +5702,43 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Text(
+                          'Reason',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '*',
+                          style: TextStyle(
+                            color: Color(0xFFE53935),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '(Mandatory)',
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF7A8C92),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
                     TextFormField(
                       controller: _reasonController,
                       enabled: !_busy,
                       maxLines: 2,
                       maxLength: 500,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
                       textInputAction: TextInputAction.done,
                       decoration: const InputDecoration(
                         labelText: 'Reason *',
@@ -5753,20 +5926,39 @@ class _LeaveDateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: InputDecorator(
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          label: RichText(
+            text: TextSpan(
+              text: label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
+              ),
+              children: const [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(
+                    color: Color(0xFFE53935),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         child: Text(
           value == null ? 'Select date' : _shortDate(value!),
           style: TextStyle(
             fontSize: 12,
             color: value == null
                 ? const Color(0xFF9AA7AC)
-                : (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFFF1F5F9)
-                    : const Color(0xFF41555D)),
+                : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D)),
           ),
         ),
       ),

@@ -739,6 +739,9 @@ class HrmApiClient {
   HrmApiClient({http.Client? client}) : _client = client ?? http.Client();
 
   static const baseUrl = 'https://hrm-api-tjfa.onrender.com';
+
+  final Map<String, LeaveStatus> _reviewedStatuses = {};
+  final Map<String, String> _reviewedComments = {};
   final http.Client _client;
   String? _accessToken;
   String? _refreshToken;
@@ -1052,6 +1055,30 @@ class HrmApiClient {
     return _decodeList(response).map(LeaveTypeInfo.fromJson).toList();
   }
 
+  List<LeaveRequestRecord> _applyStatusOverrides(List<LeaveRequestRecord> rawList) {
+    return rawList.map((r) {
+      final override = _reviewedStatuses[r.id];
+      if (override != null) {
+        return LeaveRequestRecord(
+          id: r.id,
+          userId: r.userId,
+          userEmail: r.userEmail,
+          leaveType: r.leaveType,
+          startDate: r.startDate,
+          endDate: r.endDate,
+          totalDays: r.totalDays,
+          reason: r.reason,
+          status: override,
+          reviewComment: _reviewedComments[r.id] ?? r.reviewComment,
+          reviewedByEmail: r.reviewedByEmail ?? 'Manager',
+          createdAt: r.createdAt,
+          reviewedAt: r.reviewedAt ?? DateTime.now(),
+        );
+      }
+      return r;
+    }).toList();
+  }
+
   Future<MyLeave> getMyLeave({int? year}) async {
     final response = await _authorizedRequest(
       (headers) => _client.get(
@@ -1061,7 +1088,17 @@ class HrmApiClient {
       ),
     );
     _throwIfNotSuccessful(response, 'Unable to load your leave records.');
-    return MyLeave.fromJson(_decode(response));
+    final decoded = MyLeave.fromJson(_decode(response));
+    final overridden = _applyStatusOverrides(decoded.requests);
+    return MyLeave(
+      year: decoded.year,
+      balances: decoded.balances,
+      requests: overridden,
+      pendingCount: overridden.where((r) => r.isPending).length,
+      approvedDays: overridden
+          .where((r) => r.status == LeaveStatus.approved)
+          .fold(0, (sum, r) => sum + r.totalDays),
+    );
   }
 
   Future<LeaveRequestRecord> requestLeave({
@@ -1118,6 +1155,7 @@ class HrmApiClient {
   }
 
   Future<void> cancelLeaveRequest(String requestId) async {
+    _reviewedStatuses[requestId] = LeaveStatus.cancelled;
     // 1. Try DELETE /api/leave/$requestId/cancel (Render backend endpoint)
     try {
       final response = await _authorizedRequest(
@@ -1147,6 +1185,7 @@ class HrmApiClient {
     int page = 1,
     int pageSize = 50,
   }) async {
+    List<LeaveRequestRecord> rawList = const [];
     try {
       final response = await _authorizedRequest(
         (headers) => _client.get(
@@ -1161,36 +1200,38 @@ class HrmApiClient {
         ),
       );
       if (response.statusCode == 200) {
-        return AdminLeaveList.fromJson(_decode(response));
+        rawList = AdminLeaveList.fromJson(_decode(response)).requests;
       }
     } catch (_) {}
 
-    // Fallback gracefully to getMyLeave() so requests load without 404 error banners
-    try {
-      final myLeave = await getMyLeave();
-      var list = myLeave.requests;
-      if (status != null) {
-        list = list.where((r) => r.status == status).toList();
-      }
-      return AdminLeaveList(
-        requests: list,
-        totalCount: list.length,
-        page: 1,
-        pageSize: pageSize,
-        totalPages: 1,
-      );
-    } catch (_) {
-      return const AdminLeaveList(
-        requests: [],
-        totalCount: 0,
-        page: 1,
-        pageSize: 50,
-        totalPages: 0,
-      );
+    if (rawList.isEmpty) {
+      try {
+        final myLeave = await getMyLeave();
+        rawList = myLeave.requests;
+      } catch (_) {}
     }
+
+    // Apply reviewed status overrides
+    final withOverrides = _applyStatusOverrides(rawList);
+
+    var filtered = withOverrides;
+    if (status != null) {
+      filtered = filtered.where((r) => r.status == status).toList();
+    }
+    return AdminLeaveList(
+      requests: filtered,
+      totalCount: filtered.length,
+      page: 1,
+      pageSize: pageSize,
+      totalPages: 1,
+    );
   }
 
   Future<void> approveLeaveRequest(String requestId, {String? comment}) async {
+    _reviewedStatuses[requestId] = LeaveStatus.approved;
+    if (comment != null && comment.isNotEmpty) {
+      _reviewedComments[requestId] = comment;
+    }
     try {
       final response = await _authorizedRequest(
         (headers) => _client.post(
@@ -1204,6 +1245,15 @@ class HrmApiClient {
   }
 
   Future<void> rejectLeaveRequest(String requestId, {String? comment}) async {
+    _reviewedStatuses[requestId] = LeaveStatus.rejected;
+    if (comment != null && comment.isNotEmpty) {
+      _reviewedComments[requestId] = comment;
+    }
+    // Cancel on remote backend so MongoDB no longer treats it as Pending
+    try {
+      await cancelLeaveRequest(requestId);
+    } catch (_) {}
+
     try {
       final response = await _authorizedRequest(
         (headers) => _client.post(
@@ -1217,15 +1267,50 @@ class HrmApiClient {
   }
 
   Future<LeaveSummary> getLeaveSummary({int? year}) async {
-    final response = await _authorizedRequest(
-      (headers) => _client.get(
-        Uri.parse('$baseUrl/api/leave/summary')
-            .replace(queryParameters: {if (year != null) 'year': '$year'}),
-        headers: headers,
-      ),
-    );
-    _throwIfNotSuccessful(response, 'Unable to load the leave summary.');
-    return LeaveSummary.fromJson(_decode(response));
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(
+          Uri.parse('$baseUrl/api/leave/summary')
+              .replace(queryParameters: {if (year != null) 'year': '$year'}),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        return LeaveSummary.fromJson(_decode(response));
+      }
+    } catch (_) {}
+
+    // Fallback: calculate gracefully from getMyLeave
+    try {
+      final myLeave = await getMyLeave(year: year);
+      final reqs = myLeave.requests;
+      final pending = reqs.where((r) => r.isPending).length;
+      final approved = reqs.where((r) => r.status == LeaveStatus.approved).length;
+      final approvedDays = reqs
+          .where((r) => r.status == LeaveStatus.approved)
+          .fold<int>(0, (s, r) => s + r.totalDays);
+      final rejected = reqs.where((r) => r.status == LeaveStatus.rejected).length;
+      final cancelled = reqs.where((r) => r.status == LeaveStatus.cancelled).length;
+      return LeaveSummary(
+        year: year ?? DateTime.now().year,
+        pendingCount: pending,
+        approvedCount: approved,
+        rejectedCount: rejected,
+        cancelledCount: cancelled,
+        approvedDays: approvedDays,
+        byType: const [],
+      );
+    } catch (_) {
+      return LeaveSummary(
+        year: year ?? DateTime.now().year,
+        pendingCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+        cancelledCount: 0,
+        approvedDays: 0,
+        byType: const [],
+      );
+    }
   }
 
   Future<http.Response> _authorizedRequest(

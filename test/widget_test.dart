@@ -156,6 +156,35 @@ void main() {
     expect(find.text('Leave request approved.'), findsOneWidget);
   });
 
+  testWidgets('manager can reject a leave request and it updates state', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('user3@company.com'), findsWidgets);
+    expect(find.text('Reject'), findsWidgets);
+
+    await tester.tap(find.text('Reject').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reject leave?'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Reject')));
+    await tester.pumpAndSettle();
+
+    expect(api.rejectCalls, 1);
+    expect(find.text('Leave request rejected.'), findsOneWidget);
+  });
+
   testWidgets('forgot password sends a reset link and confirms by message', (
     WidgetTester tester,
   ) async {
