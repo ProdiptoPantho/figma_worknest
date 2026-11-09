@@ -1,0 +1,2 @@
+- [Leave System Complete](memory/2026-11-08-leave-system-complete.md) — hook
+- [Leave Fixes, Employee Task Manager & Production Deployment](memory/2026-11-09-leave-fixes-and-task-manager-live.md) — hook

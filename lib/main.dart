@@ -229,7 +229,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _showForgotPassword({PasswordResetLink? link}) async {
-    final email = await showDialog<String>(
+    final result = await showDialog<Map<String, String>>(
       context: context,
       barrierDismissible: false,
       builder: (context) => _ForgotPasswordDialog(
@@ -239,183 +239,782 @@ class _LoginPageState extends State<LoginPage> {
         startAtReset: link != null,
       ),
     );
-    if (email == null || !mounted) return;
-    setState(() {
-      _emailController.text = email;
-      _passwordController.clear();
-      _errorMessage = null;
-    });
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Password updated. Sign in with your new password.'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 4),
-        ),
-      );
+    if (result == null || !mounted) return;
+
+    final action = result['action'];
+    final email = result['email'];
+
+    if (action == 'requested') {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'If the email exists, a password reset link has been sent to your inbox.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Color(0xFF2A7C68),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      return;
+    }
+
+    if (action == 'reset' && email != null) {
+      setState(() {
+        _emailController.text = email;
+        _passwordController.clear();
+        _errorMessage = null;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Password updated. Sign in with your new password.'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 4),
+          ),
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F7F9),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Card(
-              elevation: 0,
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+      body: Stack(
+        children: [
+          const _AuthBackdrop(),
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1040),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final wide = constraints.maxWidth >= 860;
+                            final content = wide
+                                ? ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      minHeight: 500,
+                                    ),
+                                    child: IntrinsicHeight(
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          const Expanded(
+                                            flex: 11,
+                                            child: _LoginBrandPanel(),
+                                          ),
+                                          Expanded(
+                                            flex: 9,
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                    34,
+                                                    34,
+                                                    34,
+                                                    30,
+                                                  ),
+                                              child: _buildForm(compact: false),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      26,
+                                      28,
+                                      26,
+                                      26,
+                                    ),
+                                    child: _buildForm(compact: true),
+                                  );
+                            return Card(
+                              elevation: 0,
+                              color: Colors.white,
+                              clipBehavior: Clip.antiAlias,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: content,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const _LoginFooter(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForm({required bool compact}) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (compact) ...[
+            const Row(
+              children: [
+                Icon(Icons.hub_rounded, color: Color(0xFF59CDB6), size: 26),
+                SizedBox(width: 9),
+                Text(
+                  'PeopleHub',
+                  style: TextStyle(
+                    color: Color(0xFF103A48),
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF7F4),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(30),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.hub_rounded,
-                            color: Color(0xFF59CDB6),
-                            size: 28,
-                          ),
-                          SizedBox(width: 10),
-                          Text(
-                            'PeopleHub',
-                            style: TextStyle(
-                              color: Color(0xFF103A48),
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+              child: const Text(
+                'SECURE SIGN IN',
+                style: TextStyle(
+                  color: Color(0xFF2A7C68),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          const Text(
+            'Welcome back',
+            style: TextStyle(
+              color: Color(0xFF103A48),
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.6,
+            ),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Sign in to your secure HR workspace.',
+            style: TextStyle(color: Color(0xFF83939A), fontSize: 12),
+          ),
+          const SizedBox(height: 26),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.username, AutofillHints.email],
+            decoration: const InputDecoration(
+              labelText: 'Work email',
+              hintText: 'you@company.com',
+              prefixIcon: Icon(Icons.mail_outline_rounded),
+            ),
+            onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+            validator: (value) {
+              final email = value?.trim() ?? '';
+              if (email.isEmpty ||
+                  !email.contains('@') ||
+                  !email.contains('.')) {
+                return 'Enter a valid work email';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            decoration: InputDecoration(
+              labelText: 'Password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+              ),
+            ),
+            onFieldSubmitted: (_) {
+              if (!_isSubmitting) _signIn();
+            },
+            validator: (value) => (value?.length ?? 0) < 8
+                ? 'Password must be at least 8 characters'
+                : null,
+          ),
+          const SizedBox(height: 11),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _isSubmitting ? null : _showForgotPassword,
+              child: const Text('Forgot password?'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(color: Color(0xFFB05B68), fontSize: 12),
+              ),
+            ),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton(
+              onPressed: _isSubmitting ? null : _signIn,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF103A48),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
-                      const SizedBox(height: 34),
-                      const Text(
-                        'Welcome back',
-                        style: TextStyle(
-                          color: Color(0xFF103A48),
-                          fontSize: 25,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      const Text(
-                        'Sign in to your secure HR workspace.',
-                        style: TextStyle(
-                          color: Color(0xFF83939A),
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 26),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [
-                          AutofillHints.username,
-                          AutofillHints.email,
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'Work email',
-                          hintText: 'you@company.com',
-                          prefixIcon: Icon(Icons.mail_outline_rounded),
-                        ),
-                        validator: (value) {
-                          final email = value?.trim() ?? '';
-                          if (email.isEmpty ||
-                              !email.contains('@') ||
-                              !email.contains('.')) {
-                            return 'Enter a valid work email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        autofillHints: const [AutofillHints.password],
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_outline_rounded),
-                          suffixIcon: IconButton(
-                            tooltip: _obscurePassword
-                                ? 'Show password'
-                                : 'Hide password',
-                            onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                            ),
-                          ),
-                        ),
-                        validator: (value) => (value?.length ?? 0) < 8
-                            ? 'Password must be at least 8 characters'
-                            : null,
-                      ),
-                      const SizedBox(height: 11),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _isSubmitting ? null : _showForgotPassword,
-                          child: const Text('Forgot password?'),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            _errorMessage!,
-                            style: const TextStyle(
-                              color: Color(0xFFB05B68),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _isSubmitting ? null : _signIn,
-                          child: _isSubmitting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Sign in'),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      const Center(
-                        child: Text(
-                          'Your session is kept in memory and cleared on logout.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Color(0xFF8A999E),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ],
+                    )
+                  : const Text('Sign in'),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F9FA),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE4ECEE)),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 15,
+                  color: Color(0xFF2A9A75),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Protected by role-based access. Your session is kept in memory and cleared on logout.',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF7A8C92),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.support_agent_rounded,
+                size: 13,
+                color: Color(0xFF9AA9AE),
+              ),
+              SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'No account yet? Ask your HR administrator for an invite.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 9.5, color: Color(0xFF9AA9AE)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoginFooter extends StatelessWidget {
+  const _LoginFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 4, 28, 18),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1040),
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 18,
+          runSpacing: 10,
+          children: const [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hub_rounded, size: 15, color: Color(0xFF7FA9A2)),
+                SizedBox(width: 6),
+                Text(
+                  'PeopleHub',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF44605F),
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                SizedBox(width: 9),
+                Text(
+                  '© 2026 · All rights reserved',
+                  style: TextStyle(fontSize: 9.5, color: Color(0xFF9AA9AE)),
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _FooterTag(
+                  icon: Icons.lock_outline_rounded,
+                  label: 'Encrypted session',
+                ),
+                _FooterTag(
+                  icon: Icons.shield_outlined,
+                  label: 'Role-based access',
+                ),
+                _FooterTag(icon: Icons.bolt_rounded, label: 'Built for teams'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FooterTag extends StatelessWidget {
+  const _FooterTag({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(170),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDFEAEC)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: const Color(0xFF5E8B85)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6E8388),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthBackdrop extends StatelessWidget {
+  const _AuthBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFEDF6F6), Color(0xFFF4F8FA), Color(0xFFE8F1F6)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -120,
+              left: -90,
+              child: _softCircle(340, const Color(0x3359CDB6)),
+            ),
+            Positioned(
+              bottom: -150,
+              right: -80,
+              child: _softCircle(420, const Color(0x223568D5)),
+            ),
+            Positioned(
+              top: 80,
+              right: 120,
+              child: _softCircle(120, const Color(0x1F93E8D8)),
+            ),
+            Positioned(
+              left: -60,
+              bottom: 110,
+              child: _softCircle(210, const Color(0x1F59CDB6)),
+            ),
+            const Positioned(
+              top: 54,
+              left: 48,
+              child: _FloatingTile(
+                icon: Icons.schedule_rounded,
+                color: Color(0xFF2A9A75),
+                angle: -0.14,
+              ),
+            ),
+            const Positioned(
+              top: 132,
+              right: 30,
+              child: _FloatingTile(
+                icon: Icons.event_available_rounded,
+                color: Color(0xFF3568D5),
+                angle: 0.12,
+              ),
+            ),
+            const Positioned(
+              left: 74,
+              bottom: 238,
+              child: _FloatingTile(
+                icon: Icons.verified_user_outlined,
+                color: Color(0xFF2A7C68),
+                angle: 0.1,
+              ),
+            ),
+            const Positioned(left: 46, bottom: 92, child: _DotGrid()),
+            Positioned(
+              right: 70,
+              bottom: 46,
+              child: Container(
+                width: 132,
+                height: 132,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0x1F2A7C68),
+                    width: 1.5,
                   ),
                 ),
               ),
             ),
+            Positioned(
+              left: 120,
+              bottom: 40,
+              child: Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0x1A3568D5),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _softCircle(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _FloatingTile extends StatelessWidget {
+  const _FloatingTile({
+    required this.icon,
+    required this.color,
+    required this.angle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double angle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: angle,
+      child: Container(
+        width: 62,
+        height: 62,
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(205),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: const Color(0xFFE3EDEE)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14103A48),
+              blurRadius: 18,
+              offset: Offset(0, 7),
+            ),
+          ],
+        ),
+        child: Icon(icon, color: color, size: 25),
+      ),
+    );
+  }
+}
+
+class _DotGrid extends StatelessWidget {
+  const _DotGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(size: const Size(180, 130), painter: _DotGridPainter());
+  }
+}
+
+class _DotGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0x242A7C68);
+    const gap = 18.0;
+    for (var x = 0.0; x <= size.width; x += gap) {
+      for (var y = 0.0; y <= size.height; y += gap) {
+        canvas.drawCircle(Offset(x, y), 1.7, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _LoginBrandPanel extends StatelessWidget {
+  const _LoginBrandPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B2F3D), Color(0xFF154E5B), Color(0xFF1E7A78)],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -70,
+            top: -60,
+            child: _glow(240, const Color(0x1FFFFFFF)),
           ),
+          Positioned(
+            left: -50,
+            bottom: 40,
+            child: _glow(190, const Color(0x1A93E8D8)),
+          ),
+          Positioned(
+            right: 30,
+            bottom: -60,
+            child: _glow(150, const Color(0x266DDBC5)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(38, 38, 34, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.hub_rounded, color: Color(0xFF8EE6D4), size: 27),
+                    SizedBox(width: 10),
+                    Text(
+                      'PeopleHub',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0x2693E8D8),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'HR OPERATIONS, SIMPLIFIED',
+                    style: TextStyle(
+                      color: Color(0xFFB6F0E4),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Your people,\nin one place.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 34,
+                    height: 1.1,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Attendance, leave, roles and reports in one calm workspace that keeps your team in sync.',
+                  style: TextStyle(
+                    color: Color(0xFFB9D6D8),
+                    fontSize: 12.5,
+                    height: 1.65,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                const _BrandFeature(
+                  icon: Icons.schedule_rounded,
+                  label: 'Live attendance and working hours',
+                ),
+                const SizedBox(height: 14),
+                const _BrandFeature(
+                  icon: Icons.beach_access_outlined,
+                  label: 'Leave requests with clear approvals',
+                ),
+                const SizedBox(height: 14),
+                const _BrandFeature(
+                  icon: Icons.shield_outlined,
+                  label: 'Role-based access, enforced by the API',
+                ),
+                const Spacer(),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: const [
+                    _BrandPill(label: 'Secure sessions'),
+                    _BrandPill(label: 'Role aware'),
+                    _BrandPill(label: 'Built for teams'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glow(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+  }
+}
+
+class _BrandFeature extends StatelessWidget {
+  const _BrandFeature({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: const Color(0x1FFFFFFF),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: const Color(0xFF93E8D8), size: 16),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFD8ECEC),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BrandPill extends StatelessWidget {
+  const _BrandPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFFFFFF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x26FFFFFF)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFCFE6E7),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -521,19 +1120,15 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   Future<void> _requestReset() async {
     if (!_requestFormKey.currentState!.validate()) return;
+    final email = _emailController.text.trim();
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.api.requestPasswordReset(_emailController.text);
+      await widget.api.requestPasswordReset(email);
       if (mounted) {
-        setState(() {
-          _resetStep = true;
-          _busy = false;
-          _passwordController.clear();
-          _confirmController.clear();
-        });
+        Navigator.of(context).pop({'action': 'requested', 'email': email});
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -578,7 +1173,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         resetToken: credentials.token,
       );
       if (mounted) {
-        Navigator.of(context).pop(credentials.email);
+        Navigator.of(context)
+            .pop({'action': 'reset', 'email': credentials.email});
       }
     } on ApiException catch (error) {
       if (mounted) {
@@ -695,12 +1291,16 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             autofocus: true,
             enabled: !_busy,
             keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.email],
             decoration: const InputDecoration(
               labelText: 'Work email',
               hintText: 'you@company.com',
               prefixIcon: Icon(Icons.mail_outline_rounded),
             ),
+            onFieldSubmitted: (_) {
+              if (!_busy) _requestReset();
+            },
             validator: _validateEmail,
           ),
           if (_error != null) _DialogError(message: _error!),
@@ -755,11 +1355,13 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             enabled: !_busy,
             minLines: 1,
             maxLines: 2,
+            textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'Reset code or link',
               hintText: 'Paste the code from your email',
               prefixIcon: Icon(Icons.key_rounded),
             ),
+            onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
             validator: _validateToken,
           ),
           const SizedBox(height: 14),
@@ -768,6 +1370,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             controller: _passwordController,
             obscureText: _obscurePassword,
             enabled: !_busy,
+            textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.newPassword],
             decoration: InputDecoration(
               labelText: 'New password',
@@ -784,6 +1387,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 ),
               ),
             ),
+            onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
             validator: _validatePassword,
           ),
           const SizedBox(height: 14),
@@ -792,6 +1396,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             controller: _confirmController,
             obscureText: _obscureConfirmation,
             enabled: !_busy,
+            textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.newPassword],
             decoration: InputDecoration(
               labelText: 'Confirm new password',
@@ -810,6 +1415,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 ),
               ),
             ),
+            onFieldSubmitted: (_) {
+              if (!_busy) _resetPassword();
+            },
             validator: _validateConfirmation,
           ),
           const SizedBox(height: 12),
@@ -870,6 +1478,7 @@ enum _Permission {
 
 enum _NavPage {
   overview,
+  tasks,
   employees,
   calendar,
   leaveRequests,
@@ -960,6 +1569,12 @@ class _DashboardPageState extends State<DashboardPage> {
       _NavPage.overview,
     ),
     _NavItem(
+      Icons.task_alt_rounded,
+      'Tasks',
+      _Permission.selfService,
+      _NavPage.tasks,
+    ),
+    _NavItem(
       Icons.badge_outlined,
       'Employee management',
       _Permission.manageEmployees,
@@ -1010,11 +1625,7 @@ class _DashboardPageState extends State<DashboardPage> {
   ];
 
   List<_NavItem> get _navigation => _allNavigation
-      .where(
-        (item) =>
-            _RolePolicy.can(_role, item.permission) &&
-            (item.page != _NavPage.myLeave || _role == _Role.employee),
-      )
+      .where((item) => _RolePolicy.can(_role, item.permission))
       .toList();
 
   @override
@@ -1247,8 +1858,15 @@ class _DashboardPageState extends State<DashboardPage> {
                                   onAction: _showMessage,
                                 )
                               : _navigation[_selectedIndex].page ==
+                                    _NavPage.tasks
+                              ? _TaskManagerContent(
+                                  session: widget.session,
+                                  onAction: _showMessage,
+                                )
+                              : _navigation[_selectedIndex].page ==
                                     _NavPage.employees
                               ? _EmployeeManagementContent(
+                                  api: widget.api,
                                   onAction: _showMessage,
                                 )
                               : _navigation[_selectedIndex].page ==
@@ -1260,10 +1878,16 @@ class _DashboardPageState extends State<DashboardPage> {
                                 )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.leaveRequests
-                              ? _TimeOffContent(onAction: _showMessage)
+                              ? _TimeOffContent(
+                                  api: widget.api,
+                                  onAction: _showMessage,
+                                )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.myLeave
-                              ? _MyLeaveContent(onAction: _showMessage)
+                              ? _MyLeaveContent(
+                                  api: widget.api,
+                                  onAction: _showMessage,
+                                )
                               : _navigation[_selectedIndex].page ==
                                     _NavPage.team
                               ? _TeamContent(
@@ -1618,7 +2242,7 @@ class _DashboardContent extends StatelessWidget {
             _MetricCard(
               label: 'Leave balance',
               value: '12 days',
-              note: 'Annual leave available',
+              note: 'Available annually',
               progress: 0.62,
               color: Colors.white,
             ),
@@ -1895,7 +2519,10 @@ class _TeamContentState extends State<_TeamContent> {
                     )
                   : _TeamAttendanceTable(report: daily),
             );
-            final requests = _RequestsToReview(onAction: widget.onAction);
+            final requests = _RequestsToReview(
+              api: widget.api,
+              onAction: widget.onAction,
+            );
             return compact
                 ? Column(
                     children: [
@@ -1994,73 +2621,155 @@ class _TeamAttendanceTable extends StatelessWidget {
   }
 }
 
-class _RequestsToReview extends StatelessWidget {
-  const _RequestsToReview({required this.onAction});
+class _RequestsToReview extends StatefulWidget {
+  const _RequestsToReview({required this.api, required this.onAction});
+
+  final HrmApiClient api;
   final ValueChanged<String> onAction;
+
+  @override
+  State<_RequestsToReview> createState() => _RequestsToReviewState();
+}
+
+class _RequestsToReviewState extends State<_RequestsToReview> {
+  List<LeaveRequestRecord> _requests = const [];
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final list = await widget.api.getLeaveRequests(
+        status: LeaveStatus.pending,
+        pageSize: 3,
+      );
+      if (!mounted) return;
+      setState(() {
+        _requests = list.requests;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load requests to review.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _review(LeaveRequestRecord request, bool approve) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      if (approve) {
+        await widget.api.approveLeaveRequest(request.id);
+      } else {
+        await widget.api.rejectLeaveRequest(request.id);
+      }
+      widget.onAction(
+        approve ? 'Leave request approved.' : 'Leave request rejected.',
+      );
+      await _load();
+    } on ApiException catch (error) {
+      widget.onAction(error.message);
+    } on TimeoutException {
+      widget.onAction('The API took too long to respond. Try again.');
+    } on Exception {
+      widget.onAction('Could not update the leave request. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
       title: 'Requests to review',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Ava Thompson',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-              color: Color(0xFF41555D),
+      trailing: _loading
+          ? null
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3D6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_requests.length} pending',
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF9A7420),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Product designer',
-            style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Annual leave • Nov 16–17 • 2 days',
-            style: TextStyle(fontSize: 10, color: Color(0xFF60717A)),
-          ),
-          const SizedBox(height: 9),
-          const Text(
-            'Design chore: 90% • No conflicts',
-            style: TextStyle(fontSize: 10, color: Color(0xFF2A9A75)),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => onAction('Leave request approved.'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF3568D5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: const Text('Approve', style: TextStyle(fontSize: 11)),
+      child: _loading
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => onAction('Leave request rejected.'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFB05B68),
-                    side: const BorderSide(color: Color(0xFFE8BBC2)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
+            )
+          : _error != null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFB05B68),
                   ),
-                  child: const Text('Reject', style: TextStyle(fontSize: 11)),
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            )
+          : _requests.isEmpty
+          ? const _EmptyState(
+              icon: Icons.task_alt_rounded,
+              title: 'You are all caught up',
+              message: 'No leave requests are waiting for review.',
+            )
+          : Column(
+              children: [
+                for (final request in _requests)
+                  _LeaveRequestTile(
+                    request: request,
+                    busy: _busy,
+                    onApprove: () => _review(request, true),
+                    onReject: () => _review(request, false),
+                  ),
+              ],
+            ),
     );
   }
 }
@@ -3247,6 +3956,98 @@ Color _attendanceStatusColor(AttendanceStatus status) {
   }
 }
 
+Color _leaveStatusColor(LeaveStatus status) {
+  switch (status) {
+    case LeaveStatus.pending:
+      return const Color(0xFFB07B22);
+    case LeaveStatus.approved:
+      return const Color(0xFF2A9A75);
+    case LeaveStatus.rejected:
+      return const Color(0xFFB05B68);
+    case LeaveStatus.cancelled:
+      return const Color(0xFF8B9AA0);
+  }
+}
+
+Color _leaveBalanceColor(int index) {
+  const colors = [
+    Color(0xFFDDF6EB),
+    Color(0xFFE7EFFD),
+    Color(0xFFFFF3D6),
+    Color(0xFFFDE8EC),
+  ];
+  return colors[index % colors.length];
+}
+
+int _workingDays(DateTime start, DateTime end) {
+  var count = 0;
+  var date = DateUtils.dateOnly(start);
+  final last = DateUtils.dateOnly(end);
+  while (!date.isAfter(last)) {
+    if (date.weekday != DateTime.saturday && date.weekday != DateTime.sunday) {
+      count++;
+    }
+    date = date.add(const Duration(days: 1));
+  }
+  return count;
+}
+
+String _shortDate(DateTime date) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final month = months[date.month - 1];
+  return '${date.day} $month ${date.year}';
+}
+
+String _leaveDateRange(DateTime? start, DateTime? end) {
+  if (start == null && end == null) return '—';
+  if (start == null) return _shortDate(end!);
+  if (end == null) return _shortDate(start);
+  if (DateUtils.isSameDay(start, end)) return _shortDate(start);
+  if (start.month == end.month && start.year == end.year) {
+    return '${start.day}–${end.day} ${_shortDate(end).split(' ')[1]} ${end.year}';
+  }
+  return '${_shortDate(start)} – ${_shortDate(end)}';
+}
+
+class _LeaveStatusPill extends StatelessWidget {
+  const _LeaveStatusPill({required this.status});
+
+  final LeaveStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _leaveStatusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(28),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.status});
 
@@ -3273,97 +4074,1312 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _TimeOffContent extends StatelessWidget {
-  const _TimeOffContent({required this.onAction});
+class _TimeOffContent extends StatefulWidget {
+  const _TimeOffContent({required this.api, required this.onAction});
+
+  final HrmApiClient api;
   final ValueChanged<String> onAction;
 
   @override
+  State<_TimeOffContent> createState() => _TimeOffContentState();
+}
+
+class _TimeOffContentState extends State<_TimeOffContent> {
+  LeaveStatus? _filter;
+  AdminLeaveList? _list;
+  LeaveSummary? _summary;
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await Future.wait<Object>([
+        widget.api.getLeaveRequests(status: _filter, pageSize: 100),
+        widget.api.getLeaveSummary(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _list = results[0] as AdminLeaveList;
+        _summary = results[1] as LeaveSummary;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load leave requests. Check your connection.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _openRequest() async {
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => _LeaveRequestDialog(api: widget.api),
+    );
+    if (created == true) {
+      widget.onAction('Leave request submitted for review.');
+      await _load();
+    }
+  }
+
+  // UX 1 + UX 2 + Bug 5: Confirmation dialog for approve; comment dialog for reject
+  Future<void> _review(LeaveRequestRecord record, bool approve) async {
+    if (_busy) return;
+
+    if (approve) {
+      // UX 1: Inline confirmation before approving
+      final dateRange = _leaveDateRange(record.startDate, record.endDate);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: const Text(
+            'Approve leave?',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                record.userEmail,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF103A48),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${record.leaveType}  •  $dateRange  •  '
+                '${record.totalDays} ${record.totalDays == 1 ? "day" : "days"}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF2A9A75),
+              ),
+              child: const Text('Approve'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      setState(() => _busy = true);
+      try {
+        await widget.api.approveLeaveRequest(record.id);
+        widget.onAction('Leave request approved.');
+        await _load();
+      } on ApiException catch (error) {
+        widget.onAction(error.message);
+      } on TimeoutException {
+        widget.onAction('The API took too long to respond. Try again.');
+      } on Exception {
+        widget.onAction('Could not update the leave request. Try again.');
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    } else {
+      // UX 2 + Bug 5: Comment dialog for rejection
+      final commentController = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: const Text(
+            'Reject leave?',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${record.userEmail}  •  ${record.leaveType}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: commentController,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for rejection (optional)',
+                  hintText: 'Let the employee know why...',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB05B68),
+              ),
+              child: const Text('Reject'),
+            ),
+          ],
+        ),
+      );
+      final comment = commentController.text.trim();
+      commentController.dispose();
+      if (confirmed != true) return;
+      setState(() => _busy = true);
+      try {
+        await widget.api.rejectLeaveRequest(
+          record.id,
+          comment: comment.isEmpty ? null : comment,
+        );
+        widget.onAction('Leave request rejected.');
+        await _load();
+      } on ApiException catch (error) {
+        widget.onAction(error.message);
+      } on TimeoutException {
+        widget.onAction('The API took too long to respond. Try again.');
+      } on Exception {
+        widget.onAction('Could not update the leave request. Try again.');
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final requests = _list?.requests ?? const <LeaveRequestRecord>[];
+    final summary = _summary;
+
     return _Workspace(
       title: 'Time off',
-      subtitle: 'Review requests and keep leave balances accurate.',
+      subtitle: 'Review leave requests and keep balances accurate.',
       action: FilledButton.icon(
-        onPressed: () => onAction('New leave request opened.'),
+        onPressed: _openRequest,
         icon: const Icon(Icons.add, size: 16),
         label: const Text('New request'),
       ),
       children: [
-        const _SummaryRow(
+        if (_error != null) ...[
+          _Panel(
+            title: 'Could not load leave requests',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFB05B68),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        _SummaryRow(
           items: [
-            _SummaryItem('Pending review', '6', Color(0xFFFFF3D6)),
-            _SummaryItem('Approved this month', '18', Color(0xFFDDF6EB)),
-            _SummaryItem('Days taken', '42', Color(0xFFE7EFFD)),
+            _SummaryItem(
+              'Pending review',
+              _loading ? '—' : '${summary?.pendingCount ?? 0}',
+              const Color(0xFFFFF3D6),
+            ),
+            _SummaryItem(
+              'Approved this year',
+              _loading ? '—' : '${summary?.approvedCount ?? 0}',
+              const Color(0xFFDDF6EB),
+            ),
+            _SummaryItem(
+              'Days approved',
+              _loading ? '—' : '${summary?.approvedDays ?? 0}',
+              const Color(0xFFE7EFFD),
+            ),
           ],
         ),
         const SizedBox(height: 18),
         _Panel(
           title: 'Leave requests',
-          trailing: DropdownButton<String>(
-            value: 'All statuses',
+          trailing: DropdownButton<LeaveStatus?>(
+            value: _filter,
             underline: const SizedBox(),
-            items: ['All statuses', 'Pending', 'Approved', 'Rejected']
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(value, style: const TextStyle(fontSize: 11)),
+            style: const TextStyle(fontSize: 11, color: Color(0xFF41555D)),
+            items: const [
+              DropdownMenuItem<LeaveStatus?>(
+                value: null,
+                child: Text('All statuses', style: TextStyle(fontSize: 11)),
+              ),
+              DropdownMenuItem<LeaveStatus?>(
+                value: LeaveStatus.pending,
+                child: Text('Pending', style: TextStyle(fontSize: 11)),
+              ),
+              DropdownMenuItem<LeaveStatus?>(
+                value: LeaveStatus.approved,
+                child: Text('Approved', style: TextStyle(fontSize: 11)),
+              ),
+              DropdownMenuItem<LeaveStatus?>(
+                value: LeaveStatus.rejected,
+                child: Text('Rejected', style: TextStyle(fontSize: 11)),
+              ),
+              DropdownMenuItem<LeaveStatus?>(
+                value: LeaveStatus.cancelled,
+                child: Text('Cancelled', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+            onChanged: _loading
+                ? null
+                : (value) {
+                    setState(() => _filter = value);
+                    _load();
+                  },
+          ),
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   ),
                 )
-                .toList(),
-            onChanged: (_) {},
-          ),
-          child: _RequestTable(onAction: onAction),
+              : requests.isEmpty
+              ? const _EmptyState(
+                  icon: Icons.event_available_outlined,
+                  title: 'No leave requests here',
+                  message: 'New requests will appear here for approval.',
+                )
+              : Column(
+                  children: [
+                    for (final request in requests)
+                      _LeaveRequestTile(
+                        request: request,
+                        busy: _busy,
+                        onApprove: request.isPending
+                            ? () => _review(request, true)
+                            : null,
+                        onReject: request.isPending
+                            ? () => _review(request, false)
+                            : null,
+                      ),
+                  ],
+                ),
         ),
       ],
     );
   }
 }
 
-class _MyLeaveContent extends StatelessWidget {
-  const _MyLeaveContent({required this.onAction});
+class _MyLeaveContent extends StatefulWidget {
+  const _MyLeaveContent({required this.api, required this.onAction});
+
+  final HrmApiClient api;
   final ValueChanged<String> onAction;
 
   @override
+  State<_MyLeaveContent> createState() => _MyLeaveContentState();
+}
+
+class _MyLeaveContentState extends State<_MyLeaveContent> {
+  final DateTime _now = DateTime.now();
+  MyLeave? _myLeave;
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.api.getMyLeave(year: _now.year);
+      if (!mounted) return;
+      setState(() {
+        _myLeave = result;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load your leave records. Check your connection.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _openRequest() async {
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (_) => _LeaveRequestDialog(api: widget.api),
+    );
+    if (created == true) {
+      widget.onAction('Leave request submitted for review.');
+      await _load();
+    }
+  }
+
+  Future<void> _cancel(LeaveRequestRecord request) async {
+    if (_busy || !request.isPending) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.cancelLeaveRequest(request.id);
+      widget.onAction('Leave request cancelled.');
+      await _load();
+    } on ApiException catch (error) {
+      widget.onAction(error.message);
+    } on TimeoutException {
+      widget.onAction('The API took too long to respond. Try again.');
+    } on Exception {
+      widget.onAction('Could not cancel the request. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final leave = _myLeave;
+    final requests = leave?.requests ?? const <LeaveRequestRecord>[];
+
     return _Workspace(
       title: 'My leave',
       subtitle: 'Request time away and track your leave history.',
       action: FilledButton.icon(
-        onPressed: () => onAction('New leave request opened.'),
+        onPressed: _openRequest,
         icon: const Icon(Icons.add, size: 16),
         label: const Text('Request leave'),
       ),
       children: [
-        const _SummaryRow(
+        if (_error != null) ...[
+          _Panel(
+            title: 'Could not load your leave',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFB05B68),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        _SummaryRow(
           items: [
-            _SummaryItem('Available balance', '12 days', Color(0xFFDDF6EB)),
-            _SummaryItem('Pending requests', '1', Color(0xFFFFF3D6)),
-            _SummaryItem('Used this year', '6 days', Color(0xFFE7EFFD)),
+            _SummaryItem(
+              'Available balance',
+              _loading ? '—' : '${leave?.remainingDays ?? 0} days',
+              const Color(0xFFDDF6EB),
+            ),
+            _SummaryItem(
+              'Pending requests',
+              _loading ? '—' : '${leave?.pendingCount ?? 0}',
+              const Color(0xFFFFF3D6),
+            ),
+            _SummaryItem(
+              'Used this year',
+              _loading ? '—' : '${leave?.approvedDays ?? 0} days',
+              const Color(0xFFE7EFFD),
+            ),
           ],
         ),
         const SizedBox(height: 18),
         _Panel(
+          title: 'Leave balance ${_now.year}',
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              : Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (
+                      var index = 0;
+                      index < (leave?.balances.length ?? 0);
+                      index++
+                    )
+                      _LeaveBalanceCard(
+                        balance: leave!.balances[index],
+                        color: _leaveBalanceColor(index),
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 18),
+        _Panel(
           title: 'My leave history',
-          child: const _EmployeeTable(
-            rows: [
-              [
-                'Annual leave',
-                'Nov 16–17',
-                '2 days',
-                'Pending',
-                'Awaiting review',
-              ],
-              [
-                'Annual leave',
-                'Oct 7–10',
-                '4 days',
-                'Approved',
-                'Approved by HR',
-              ],
-              ['Sick leave', 'Sep 2', '1 day', 'Approved', 'Approved by HR'],
-            ],
+          trailing: Text(
+            requests.isEmpty ? '' : '${requests.length} requests',
+            style: const TextStyle(fontSize: 10, color: Color(0xFF8B9AA0)),
           ),
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              : requests.isEmpty
+              ? const _EmptyState(
+                  icon: Icons.beach_access_outlined,
+                  title: 'No leave yet this year',
+                  message: 'Submit a request and it will show up here.',
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowHeight: 34,
+                    dataRowMinHeight: 44,
+                    dataRowMaxHeight: 54,
+                    columnSpacing: 24,
+                    columns: const ['Type', 'Dates', 'Days', 'Status', 'Note']
+                        .map(
+                          (title) => DataColumn(
+                            label: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF8A999E),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    rows: requests
+                        .map(
+                          (request) => DataRow(
+                            cells: [
+                              DataCell(_leaveCell(request.leaveType)),
+                              DataCell(
+                                _leaveCell(
+                                  _leaveDateRange(
+                                    request.startDate,
+                                    request.endDate,
+                                  ),
+                                ),
+                              ),
+                              DataCell(_leaveCell('${request.totalDays}')),
+                              DataCell(
+                                _LeaveStatusPill(status: request.status),
+                              ),
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        request.isPending
+                                            ? 'Awaiting review'
+                                            : (request.reviewComment ??
+                                                  (request.reviewedByEmail ??
+                                                      '—')),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Color(0xFF7A8C92),
+                                        ),
+                                      ),
+                                    ),
+                                    if (request.isPending) ...[
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        onPressed: _busy
+                                            ? null
+                                            : () => _cancel(request),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: const Color(
+                                            0xFFB05B68,
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: const Size(0, 28),
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text(
+                                          'Cancel',
+                                          style: TextStyle(fontSize: 10),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
         ),
       ],
+    );
+  }
+
+  Widget _leaveCell(String value) {
+    return Text(
+      value,
+      style: const TextStyle(fontSize: 11, color: Color(0xFF41555D)),
+    );
+  }
+}
+
+class _LeaveBalanceCard extends StatelessWidget {
+  const _LeaveBalanceCard({required this.balance, required this.color});
+
+  final LeaveBalance balance;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final committed = balance.usedDays + balance.pendingDays;
+    final progress = balance.allowance <= 0
+        ? 0.0
+        : (committed / balance.allowance).clamp(0.0, 1.0);
+    return Container(
+      width: 212,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE1E9EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            balance.leaveType,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF41555D),
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${balance.remainingDays}',
+                style: const TextStyle(
+                  fontSize: 26,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF103A48),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    balance.allowance == 0
+                        ? 'unpaid days'
+                        : 'of ${balance.allowance} days left',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      color: Color(0xFF6E8087),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 4,
+              backgroundColor: Colors.white.withAlpha(150),
+              color: const Color(0xFF2A9A75),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            balance.pendingDays > 0
+                ? '${balance.usedDays} used • ${balance.pendingDays} pending'
+                : '${balance.usedDays} used',
+            style: const TextStyle(fontSize: 9.5, color: Color(0xFF6E8087)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaveRequestTile extends StatelessWidget {
+  const _LeaveRequestTile({
+    required this.request,
+    required this.busy,
+    this.onApprove,
+    this.onReject,
+  });
+
+  final LeaveRequestRecord request;
+  final bool busy;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = request.userEmail.isEmpty
+        ? '?'
+        : request.userEmail.substring(0, 1).toUpperCase();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: request.isPending ? const Color(0xFFFFFCF3) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: request.isPending
+              ? const Color(0xFFF1E2BE)
+              : const Color(0xFFE4ECEE),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: const Color(0xFFDCEAE8),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF103A48),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.userEmail.isEmpty
+                          ? 'Unknown employee'
+                          : request.userEmail,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF41555D),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_leaveDateRange(request.startDate, request.endDate)} • ${request.totalDays} ${request.totalDays == 1 ? 'day' : 'days'}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF7A8C92),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _LeaveStatusPill(status: request.status),
+            ],
+          ),
+          if (request.reason != null && request.reason!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              request.reason!,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Color(0xFF60717A),
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (onApprove != null && onReject != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                FilledButton(
+                  onPressed: busy ? null : onApprove,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A9A75),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: const Text(
+                    'Approve',
+                    style: TextStyle(fontSize: 10.5),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: busy ? null : onReject,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFB05B68),
+                    side: const BorderSide(color: Color(0xFFE8BBC2)),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: const Text('Reject', style: TextStyle(fontSize: 10.5)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaveRequestDialog extends StatefulWidget {
+  const _LeaveRequestDialog({required this.api});
+
+  final HrmApiClient api;
+
+  @override
+  State<_LeaveRequestDialog> createState() => _LeaveRequestDialogState();
+}
+
+class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _reasonController = TextEditingController();
+  List<LeaveTypeInfo> _types = const [];
+  LeaveTypeInfo? _type;
+  DateTime? _start;
+  DateTime? _end;
+  bool _loadingTypes = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTypes();
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTypes() async {
+    try {
+      final types = await widget.api.getLeaveTypes();
+      if (!mounted) return;
+      setState(() {
+        _types = types;
+        _type = types.isEmpty ? null : types.first;
+        _loadingTypes = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loadingTypes = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loadingTypes = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load leave types. Check your connection.';
+        _loadingTypes = false;
+      });
+    }
+  }
+
+  int get _days {
+    final start = _start;
+    final end = _end;
+    if (start == null || end == null) return 0;
+    return _workingDays(start, end);
+  }
+
+  Future<void> _pickDate({required bool start}) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final initial = (start ? _start : _end) ?? _start ?? today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(today) ? today : initial,
+      firstDate: today,
+      lastDate: DateTime(today.year + 2, 12, 31),
+      helpText: start ? 'Select start date' : 'Select end date',
+    );
+    if (picked == null) return;
+    setState(() {
+      if (start) {
+        _start = picked;
+        if (_end == null || _end!.isBefore(picked)) _end = picked;
+      } else {
+        _end = picked;
+        if (_start != null && picked.isBefore(_start!)) _start = picked;
+      }
+      _error = null;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final type = _type;
+    final start = _start;
+    final end = _end;
+    if (type == null) {
+      setState(() => _error = 'Choose a leave type.');
+      return;
+    }
+    if (start == null || end == null) {
+      setState(() => _error = 'Choose the leave dates.');
+      return;
+    }
+    if (_days < 1) {
+      setState(() => _error = 'Select at least one working day (Mon–Fri).');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final reason = _reasonController.text.trim();
+      await widget.api.requestLeave(
+        leaveType: type.leaveType,
+        startDate: start,
+        endDate: end,
+        reason: reason.isEmpty ? null : reason,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _busy = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond. Try again.';
+        _busy = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not submit the request. Try again.';
+        _busy = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+      title: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF7F4),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(
+              Icons.beach_access_outlined,
+              size: 18,
+              color: Color(0xFF2A7C68),
+            ),
+          ),
+          const SizedBox(width: 11),
+          const Text(
+            'Request leave',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF103A48),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 440,
+        child: _loadingTypes
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // UX 3: Leave type selector using ChoiceChip cards
+                    if (_types.isNotEmpty) ...[
+                      const Text(
+                        'Leave type',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF41555D),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _types
+                            .map(
+                              (type) => ChoiceChip(
+                                label: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      type.leaveType,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: _type == type
+                                            ? Colors.white
+                                            : const Color(0xFF41555D),
+                                      ),
+                                    ),
+                                    Text(
+                                      type.allowance > 0
+                                          ? '${type.allowance} days/yr'
+                                          : 'Unpaid',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        color: _type == type
+                                            ? Colors.white.withAlpha(200)
+                                            : const Color(0xFF8A999E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                selected: _type == type,
+                                onSelected: _busy
+                                    ? null
+                                    : (_) => setState(() => _type = type),
+                                selectedColor: const Color(0xFF103A48),
+                                backgroundColor: const Color(0xFFF3F7F9),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(
+                                    color: _type == type
+                                        ? const Color(0xFF103A48)
+                                        : const Color(0xFFD5E0E4),
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                showCheckmark: false,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _LeaveDateField(
+                            label: 'Start date',
+                            value: _start,
+                            onTap: () => _pickDate(start: true),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _LeaveDateField(
+                            label: 'End date',
+                            value: _end,
+                            onTap: () => _pickDate(start: false),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _days > 0
+                            ? const Color(0xFFEAF7F4)
+                            : const Color(0xFFF5F8F9),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: 15,
+                            color: _days > 0
+                                ? const Color(0xFF2A7C68)
+                                : const Color(0xFF8A999E),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _days > 0
+                                ? '$_days working ${_days == 1 ? 'day' : 'days'} selected'
+                                : 'Select dates to see working days',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _days > 0
+                                  ? const Color(0xFF2A7C68)
+                                  : const Color(0xFF8A999E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _reasonController,
+                      enabled: !_busy,
+                      maxLines: 2,
+                      maxLength: 500,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason (optional)',
+                        hintText: 'Add context for your reviewer',
+                        prefixIcon: Icon(Icons.notes_rounded),
+                      ),
+                      onFieldSubmitted: (_) {
+                        if (!_busy) _submit();
+                      },
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _error!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFB05B68),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy || _loadingTypes ? null : _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF103A48),
+            foregroundColor: Colors.white,
+          ),
+          child: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Submit request'),
+        ),
+      ],
+    );
+  }
+}
+
+class _LeaveDateField extends StatelessWidget {
+  const _LeaveDateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final DateTime? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: Text(
+          value == null ? 'Select date' : _shortDate(value!),
+          style: TextStyle(
+            fontSize: 12,
+            color: value == null
+                ? const Color(0xFF9AA7AC)
+                : const Color(0xFF41555D),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Center(
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F7F8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 21, color: const Color(0xFF7FA0A8)),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF41555D),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10.5, color: Color(0xFF8B9AA0)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3420,60 +5436,260 @@ class _ReportsContent extends StatelessWidget {
   }
 }
 
-class _EmployeeManagementContent extends StatelessWidget {
-  const _EmployeeManagementContent({required this.onAction});
+class _EmployeeManagementContent extends StatefulWidget {
+  const _EmployeeManagementContent({
+    required this.api,
+    required this.onAction,
+  });
+
+  final HrmApiClient api;
   final ValueChanged<String> onAction;
 
   @override
+  State<_EmployeeManagementContent> createState() =>
+      _EmployeeManagementContentState();
+}
+
+class _EmployeeManagementContentState
+    extends State<_EmployeeManagementContent> {
+  List<ApiUser> _users = const [];
+  String _search = '';
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final users = await widget.api.listUsers();
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        _loading = false;
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = 'The API took too long to respond.';
+        _loading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load accounts. Check your connection.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final filtered = _users.where((user) {
+      if (_search.isEmpty) return true;
+      final q = _search.toLowerCase();
+      final inEmail = user.email.toLowerCase().contains(q);
+      final inRoles = user.roles.any((r) => r.toLowerCase().contains(q));
+      final inStatus = user.status.toLowerCase().contains(q);
+      return inEmail || inRoles || inStatus;
+    }).toList();
+
+    final activeCount = _users.where((u) => u.status.toLowerCase() == 'active').length;
+
     return _Workspace(
       title: 'Employee management',
-      subtitle: 'Manage employee records, departments, and employment status.',
+      subtitle: 'Real workforce directory synced directly from your HR API.',
       action: FilledButton.icon(
-        onPressed: () => onAction('New employee form opened.'),
-        icon: const Icon(Icons.add, size: 16),
-        label: const Text('Add employee'),
+        onPressed: () => widget.onAction('Account invitations are managed via HR registration.'),
+        icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
+        label: const Text('Invite employee'),
       ),
       children: [
+        _SummaryRow(
+          items: [
+            _SummaryItem('Total accounts', _loading ? '—' : '${_users.length}', const Color(0xFFE7EFFD)),
+            _SummaryItem('Active users', _loading ? '—' : '$activeCount', const Color(0xFFDDF6EB)),
+            _SummaryItem('Filtered view', _loading ? '—' : '${filtered.length}', const Color(0xFFFFF3D6)),
+          ],
+        ),
+        const SizedBox(height: 18),
         _Panel(
-          title: 'Employees',
-          trailing: SizedBox(
-            width: 220,
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search employees',
-                prefixIcon: Icon(Icons.search, size: 17),
-                isDense: true,
+          title: 'Employees directory',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 200,
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Search email or role',
+                    prefixIcon: Icon(Icons.search, size: 16),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                  onChanged: (val) => setState(() => _search = val.trim()),
+                ),
               ),
-              onChanged: (_) {},
-            ),
-          ),
-          child: const _EmployeeTable(
-            rows: [
-              [
-                'Maya Chen',
-                'Engineering',
-                'Product engineer',
-                'Active',
-                'Full time',
-              ],
-              ['Noah Williams', 'Design', 'UX designer', 'Active', 'Full time'],
-              [
-                'Ava Thompson',
-                'Product',
-                'Product designer',
-                'Active',
-                'Full time',
-              ],
-              [
-                'Liam Patel',
-                'Sales',
-                'Account executive',
-                'Inactive',
-                'Contract',
-              ],
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Refresh employees',
+                icon: const Icon(Icons.refresh_rounded, size: 17, color: Color(0xFF6E8087)),
+                onPressed: _loading ? null : _load,
+              ),
             ],
           ),
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              : _error != null
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_error!, style: const TextStyle(fontSize: 11, color: Color(0xFFB05B68))),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _load,
+                          child: const Text('Retry', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    )
+                  : filtered.isEmpty
+                      ? const _EmptyState(
+                          icon: Icons.people_outline,
+                          title: 'No matching employees',
+                          message: 'Try adjusting your search criteria.',
+                        )
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowHeight: 34,
+                            dataRowMinHeight: 46,
+                            dataRowMaxHeight: 56,
+                            columnSpacing: 24,
+                            columns: const ['Employee', 'Roles', 'Status', 'Account ID']
+                                .map((t) => DataColumn(
+                                      label: Text(
+                                        t,
+                                        style: const TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
+                                      ),
+                                    ))
+                                .toList(),
+                            rows: filtered.map((user) {
+                              final initial = user.email.isNotEmpty
+                                  ? user.email[0].toUpperCase()
+                                  : '?';
+                              final isActive = user.status.toLowerCase() == 'active';
+                              return DataRow(
+                                cells: [
+                                  DataCell(
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 13,
+                                          backgroundColor: const Color(0xFFDCEAE8),
+                                          child: Text(
+                                            initial,
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF103A48),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          user.email,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF41555D),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children: user.roles
+                                          .where((r) => r.toLowerCase() != 'user')
+                                          .map((role) => Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEAF7F4),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  role,
+                                                  style: const TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Color(0xFF2A7C68),
+                                                  ),
+                                                ),
+                                              ))
+                                          .toList(),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isActive
+                                            ? const Color(0xFFDDF6EB)
+                                            : const Color(0xFFFFE5E8),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        user.status,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: isActive
+                                              ? const Color(0xFF2A9A75)
+                                              : const Color(0xFFB05B68),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Text(
+                                      user.id.length > 8 ? '${user.id.substring(0, 8)}…' : user.id,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontFamily: 'monospace',
+                                        color: Color(0xFF8A999E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
         ),
       ],
     );
@@ -3835,163 +6051,6 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-class _EmployeeTable extends StatelessWidget {
-  const _EmployeeTable({required this.rows});
-  final List<List<String>> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowHeight: 34,
-        dataRowMinHeight: 44,
-        dataRowMaxHeight: 52,
-        columnSpacing: 28,
-        columns: const [
-          DataColumn(
-            label: Text(
-              'Employee',
-              style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-            ),
-          ),
-          DataColumn(
-            label: Text(
-              'Department',
-              style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-            ),
-          ),
-          DataColumn(
-            label: Text(
-              'Check-in',
-              style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-            ),
-          ),
-          DataColumn(
-            label: Text(
-              'Status',
-              style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-            ),
-          ),
-          DataColumn(
-            label: Text(
-              'Note',
-              style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-            ),
-          ),
-        ],
-        rows: rows
-            .map(
-              (row) => DataRow(
-                cells: row
-                    .map(
-                      (value) => DataCell(
-                        Text(
-                          value,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF41555D),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            )
-            .toList(),
-      ),
-    );
-  }
-}
-
-class _RequestTable extends StatelessWidget {
-  const _RequestTable({required this.onAction});
-  final ValueChanged<String> onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final requests = [
-      ['Ava Thompson', 'Annual leave', 'Nov 16–17', 'Pending'],
-      ['Maya Chen', 'Sick leave', 'Nov 12', 'Approved'],
-      ['Noah Williams', 'Personal leave', 'Nov 24–25', 'Pending'],
-    ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowHeight: 34,
-        columnSpacing: 34,
-        columns: const ['Employee', 'Type', 'Dates', 'Status', 'Action']
-            .map(
-              (title) => DataColumn(
-                label: Text(
-                  title,
-                  style: TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
-                ),
-              ),
-            )
-            .toList(),
-        rows: requests
-            .map(
-              (request) => DataRow(
-                cells: [
-                  DataCell(
-                    Text(
-                      request[0],
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF41555D),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      request[1],
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF41555D),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      request[2],
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF41555D),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      request[3],
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: request[3] == 'Pending'
-                            ? const Color(0xFFB07B22)
-                            : const Color(0xFF2A9A75),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    request[3] == 'Pending'
-                        ? TextButton(
-                            onPressed: () => onAction('Request reviewed.'),
-                            child: const Text(
-                              'Review',
-                              style: TextStyle(fontSize: 11),
-                            ),
-                          )
-                        : const Text('—'),
-                  ),
-                ],
-              ),
-            )
-            .toList(),
-      ),
-    );
-  }
-}
-
 class _BarChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -4126,4 +6185,740 @@ class _NavItem {
   final String label;
   final _Permission permission;
   final _NavPage page;
+}
+
+// ============================================================================
+// TASK MANAGER SYSTEM FOR EMPLOYEES
+// ============================================================================
+
+enum TaskPriority {
+  low('Low', Color(0xFF2A9A75), Color(0xFFEAF7F4)),
+  medium('Medium', Color(0xFFB07B22), Color(0xFFFFF3D6)),
+  high('High', Color(0xFFB05B68), Color(0xFFFFE5E8));
+
+  const TaskPriority(this.label, this.color, this.bgColor);
+  final String label;
+  final Color color;
+  final Color bgColor;
+}
+
+enum TaskState {
+  todo('To do'),
+  inProgress('In progress'),
+  done('Done');
+
+  const TaskState(this.label);
+  final String label;
+}
+
+class EmployeeTask {
+  EmployeeTask({
+    required this.id,
+    required this.title,
+    this.description = '',
+    required this.status,
+    required this.priority,
+    this.category = 'Operations',
+    this.dueDate,
+    required this.createdAt,
+    this.completedAt,
+    this.assigneeEmail,
+  });
+
+  final String id;
+  String title;
+  String description;
+  TaskState status;
+  TaskPriority priority;
+  String category;
+  DateTime? dueDate;
+  final DateTime createdAt;
+  DateTime? completedAt;
+  String? assigneeEmail;
+}
+
+class _TaskManagerContent extends StatefulWidget {
+  const _TaskManagerContent({
+    required this.session,
+    required this.onAction,
+  });
+
+  final AuthSession session;
+  final ValueChanged<String> onAction;
+
+  @override
+  State<_TaskManagerContent> createState() => _TaskManagerContentState();
+}
+
+class _TaskManagerContentState extends State<_TaskManagerContent> {
+  final List<EmployeeTask> _tasks = [
+    EmployeeTask(
+      id: 'task-1',
+      title: 'Review and sign updated Employee Handbook 2026',
+      description: 'Review the updated leave policy, remote attendance expectations, and sign digital acknowledgment.',
+      status: TaskState.todo,
+      priority: TaskPriority.high,
+      category: 'Compliance',
+      dueDate: DateTime.now().add(const Duration(days: 2)),
+      createdAt: DateTime.now().subtract(const Duration(days: 1)),
+    ),
+    EmployeeTask(
+      id: 'task-2',
+      title: 'Submit timesheet for current bi-weekly sprint',
+      description: 'Ensure all attendance hours and overtime are correctly logged before Monday payroll cutoff.',
+      status: TaskState.inProgress,
+      priority: TaskPriority.medium,
+      category: 'Operations',
+      dueDate: DateTime.now().add(const Duration(days: 1)),
+      createdAt: DateTime.now().subtract(const Duration(days: 3)),
+    ),
+    EmployeeTask(
+      id: 'task-3',
+      title: 'Set up two-factor authentication on PeopleHub account',
+      description: 'Add mobile authenticator app as primary 2FA method for security compliance.',
+      status: TaskState.done,
+      priority: TaskPriority.high,
+      category: 'Security',
+      dueDate: DateTime.now().subtract(const Duration(days: 2)),
+      createdAt: DateTime.now().subtract(const Duration(days: 5)),
+      completedAt: DateTime.now().subtract(const Duration(days: 1)),
+    ),
+    EmployeeTask(
+      id: 'task-4',
+      title: 'Complete Q4 goal setting and performance self-evaluation',
+      description: 'Draft quarterly deliverables and submit draft to your direct manager for 1:1 review.',
+      status: TaskState.inProgress,
+      priority: TaskPriority.medium,
+      category: 'Goals',
+      dueDate: DateTime.now().add(const Duration(days: 6)),
+      createdAt: DateTime.now().subtract(const Duration(days: 2)),
+    ),
+    EmployeeTask(
+      id: 'task-5',
+      title: 'Update emergency contact & beneficiary details',
+      description: 'Verify current phone number, home address, and designated emergency contacts in employee profile.',
+      status: TaskState.todo,
+      priority: TaskPriority.low,
+      category: 'Profile',
+      dueDate: DateTime.now().add(const Duration(days: 14)),
+      createdAt: DateTime.now().subtract(const Duration(days: 4)),
+    ),
+  ];
+
+  TaskState? _statusFilter;
+  TaskPriority? _priorityFilter;
+  String _categoryFilter = 'All';
+  String _search = '';
+
+  int get _totalCount => _tasks.length;
+  int get _completedCount => _tasks.where((t) => t.status == TaskState.done).length;
+  int get _inProgressCount => _tasks.where((t) => t.status == TaskState.inProgress).length;
+  int get _highPriorityCount => _tasks.where((t) => t.priority == TaskPriority.high && t.status != TaskState.done).length;
+
+  List<EmployeeTask> get _filteredTasks {
+    return _tasks.where((task) {
+      if (_statusFilter != null && task.status != _statusFilter) return false;
+      if (_priorityFilter != null && task.priority != _priorityFilter) return false;
+      if (_categoryFilter != 'All' && task.category != _categoryFilter) return false;
+      if (_search.isNotEmpty) {
+        final q = _search.toLowerCase();
+        final matchTitle = task.title.toLowerCase().contains(q);
+        final matchDesc = task.description.toLowerCase().contains(q);
+        final matchCat = task.category.toLowerCase().contains(q);
+        if (!matchTitle && !matchDesc && !matchCat) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  void _toggleTask(EmployeeTask task) {
+    setState(() {
+      if (task.status == TaskState.done) {
+        task.status = TaskState.todo;
+        task.completedAt = null;
+        widget.onAction('Task marked as to do.');
+      } else {
+        task.status = TaskState.done;
+        task.completedAt = DateTime.now();
+        widget.onAction('Task completed! Great job.');
+      }
+    });
+  }
+
+  void _advanceTask(EmployeeTask task) {
+    setState(() {
+      switch (task.status) {
+        case TaskState.todo:
+          task.status = TaskState.inProgress;
+          widget.onAction('Task moved to In Progress.');
+          break;
+        case TaskState.inProgress:
+          task.status = TaskState.done;
+          task.completedAt = DateTime.now();
+          widget.onAction('Task finished!');
+          break;
+        case TaskState.done:
+          task.status = TaskState.todo;
+          task.completedAt = null;
+          widget.onAction('Task reopened.');
+          break;
+      }
+    });
+  }
+
+  void _deleteTask(EmployeeTask task) {
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Delete task?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        content: Text('Are you sure you want to remove "${task.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB05B68),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    ).then((confirmed) {
+      if (confirmed == true && mounted) {
+        setState(() => _tasks.removeWhere((t) => t.id == task.id));
+        widget.onAction('Task deleted.');
+      }
+    });
+  }
+
+  Future<void> _openCreateTask() async {
+    final created = await showDialog<EmployeeTask>(
+      context: context,
+      builder: (ctx) => _CreateTaskDialog(userEmail: widget.session.email),
+    );
+    if (created != null && mounted) {
+      setState(() => _tasks.insert(0, created));
+      widget.onAction('New task created.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tasks = _filteredTasks;
+    final categories = ['All', 'Operations', 'Compliance', 'Security', 'Goals', 'Profile'];
+
+    return _Workspace(
+      title: 'Task manager',
+      subtitle: 'Organize work, track deliverables, and hit your milestones on time.',
+      action: FilledButton.icon(
+        onPressed: _openCreateTask,
+        icon: const Icon(Icons.add_task_rounded, size: 16),
+        label: const Text('New task'),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF103A48),
+          foregroundColor: Colors.white,
+        ),
+      ),
+      children: [
+        _SummaryRow(
+          items: [
+            _SummaryItem('Total tasks', '$_totalCount', const Color(0xFFE7EFFD)),
+            _SummaryItem('In progress', '$_inProgressCount', const Color(0xFFFFF3D6)),
+            _SummaryItem('Completed', '$_completedCount', const Color(0xFFDDF6EB)),
+            _SummaryItem('High priority', '$_highPriorityCount', const Color(0xFFFFE5E8)),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _Panel(
+          title: 'My active tasks',
+          trailing: SizedBox(
+            width: 220,
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search tasks...',
+                prefixIcon: Icon(Icons.search, size: 16),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              onChanged: (val) => setState(() => _search = val.trim()),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _TaskFilterChip(
+                    label: 'All status',
+                    selected: _statusFilter == null,
+                    onTap: () => setState(() => _statusFilter = null),
+                  ),
+                  _TaskFilterChip(
+                    label: 'To do',
+                    selected: _statusFilter == TaskState.todo,
+                    onTap: () => setState(() => _statusFilter = TaskState.todo),
+                  ),
+                  _TaskFilterChip(
+                    label: 'In progress',
+                    selected: _statusFilter == TaskState.inProgress,
+                    onTap: () => setState(() => _statusFilter = TaskState.inProgress),
+                  ),
+                  _TaskFilterChip(
+                    label: 'Done',
+                    selected: _statusFilter == TaskState.done,
+                    onTap: () => setState(() => _statusFilter = TaskState.done),
+                  ),
+                  const SizedBox(width: 8),
+                  ...categories.map((cat) => _TaskFilterChip(
+                        label: cat,
+                        selected: _categoryFilter == cat,
+                        onTap: () => setState(() => _categoryFilter = cat),
+                        isCategory: true,
+                      )),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (tasks.isEmpty)
+                _EmptyState(
+                  icon: Icons.task_alt_rounded,
+                  title: 'No tasks found',
+                  message: _search.isNotEmpty || _statusFilter != null
+                      ? 'No tasks match your current filter.'
+                      : 'You are all clear! Add a new task to stay organized.',
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: tasks.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final task = tasks[index];
+                    return _EmployeeTaskCard(
+                      task: task,
+                      onToggle: () => _toggleTask(task),
+                      onAdvance: () => _advanceTask(task),
+                      onDelete: () => _deleteTask(task),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TaskFilterChip extends StatelessWidget {
+  const _TaskFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.isCategory = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool isCategory;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected
+              ? (isCategory ? const Color(0xFF103A48) : Colors.white)
+              : const Color(0xFF60717A),
+        ),
+      ),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: isCategory ? const Color(0xFFDDF6EB) : const Color(0xFF103A48),
+      backgroundColor: const Color(0xFFF3F7F9),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(
+          color: selected
+              ? (isCategory ? const Color(0xFF2A9A75) : const Color(0xFF103A48))
+              : const Color(0xFFD5E0E4),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      showCheckmark: false,
+    );
+  }
+}
+
+class _EmployeeTaskCard extends StatelessWidget {
+  const _EmployeeTaskCard({
+    required this.task,
+    required this.onToggle,
+    required this.onAdvance,
+    required this.onDelete,
+  });
+
+  final EmployeeTask task;
+  final VoidCallback onToggle;
+  final VoidCallback onAdvance;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = task.status == TaskState.done;
+    final isOverdue = !isDone && task.dueDate != null && task.dueDate!.isBefore(DateTime.now());
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDone ? const Color(0xFFFAFCFD) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDone ? const Color(0xFFE4ECEE) : const Color(0xFFD5E0E4),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            onPressed: onToggle,
+            tooltip: isDone ? 'Reopen task' : 'Complete task',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: Icon(
+              isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+              color: isDone ? const Color(0xFF2A9A75) : const Color(0xFF8A999E),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: isDone ? const Color(0xFF8A999E) : const Color(0xFF103A48),
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: task.priority.bgColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        task.priority.label,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: task.priority.color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (task.description.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    task.description,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDone ? const Color(0xFFA8B5BA) : const Color(0xFF60717A),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F4F6),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        task.category,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF5A6D73),
+                        ),
+                      ),
+                    ),
+                    if (task.dueDate != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 11,
+                            color: isOverdue ? const Color(0xFFB05B68) : const Color(0xFF8A999E),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isOverdue
+                                ? 'Overdue • ${_shortDate(task.dueDate!)}'
+                                : 'Due ${_shortDate(task.dueDate!)}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: isOverdue ? FontWeight.w700 : FontWeight.w500,
+                              color: isOverdue ? const Color(0xFFB05B68) : const Color(0xFF7A8C92),
+                            ),
+                          ),
+                        ],
+                      ),
+                    Text(
+                      switch (task.status) {
+                        TaskState.todo => 'Status: To do',
+                        TaskState.inProgress => 'Status: In progress',
+                        TaskState.done => 'Status: Done',
+                      },
+                      style: const TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton.tonal(
+                onPressed: onAdvance,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                  textStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                ),
+                child: Text(
+                  switch (task.status) {
+                    TaskState.todo => 'Start',
+                    TaskState.inProgress => 'Finish',
+                    TaskState.done => 'Reopen',
+                  },
+                ),
+              ),
+              IconButton(
+                tooltip: 'Delete task',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFF9AA7AC)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CreateTaskDialog extends StatefulWidget {
+  const _CreateTaskDialog({required this.userEmail});
+  final String userEmail;
+
+  @override
+  State<_CreateTaskDialog> createState() => _CreateTaskDialogState();
+}
+
+class _CreateTaskDialogState extends State<_CreateTaskDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _descController = TextEditingController();
+  TaskPriority _priority = TaskPriority.medium;
+  String _category = 'Operations';
+  DateTime? _dueDate;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDueDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? today.add(const Duration(days: 3)),
+      firstDate: today,
+      lastDate: DateTime(today.year + 2, 12, 31),
+      helpText: 'Select task due date',
+    );
+    if (picked != null) {
+      setState(() => _dueDate = picked);
+    }
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final newTask = EmployeeTask(
+      id: 'task-${DateTime.now().millisecondsSinceEpoch}',
+      title: _titleController.text.trim(),
+      description: _descController.text.trim(),
+      status: TaskState.todo,
+      priority: _priority,
+      category: _category,
+      dueDate: _dueDate,
+      createdAt: DateTime.now(),
+      assigneeEmail: widget.userEmail,
+    );
+    Navigator.of(context).pop(newTask);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const categories = ['Operations', 'Compliance', 'Security', 'Goals', 'Profile', 'Projects'];
+
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      title: const Row(
+        children: [
+          Icon(Icons.add_task_rounded, color: Color(0xFF2A9A75), size: 22),
+          SizedBox(width: 8),
+          Text(
+            'Create task',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF103A48),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 420,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextFormField(
+                  controller: _titleController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Task title *',
+                    hintText: 'What needs to be accomplished?',
+                  ),
+                  validator: (v) => (v?.trim().isEmpty ?? true) ? 'Enter a task title' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _descController,
+                  maxLines: 2,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'Add details, requirements or links',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF41555D))),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: categories
+                      .map((cat) => ChoiceChip(
+                            label: Text(cat, style: TextStyle(fontSize: 10, color: _category == cat ? Colors.white : const Color(0xFF41555D))),
+                            selected: _category == cat,
+                            onSelected: (_) => setState(() => _category = cat),
+                            selectedColor: const Color(0xFF103A48),
+                            backgroundColor: const Color(0xFFF3F7F9),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            showCheckmark: false,
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 14),
+                const Text('Priority', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF41555D))),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: TaskPriority.values
+                      .map((p) => ChoiceChip(
+                            label: Text(p.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _priority == p ? Colors.white : p.color)),
+                            selected: _priority == p,
+                            onSelected: (_) => setState(() => _priority = p),
+                            selectedColor: p.color,
+                            backgroundColor: p.bgColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            showCheckmark: false,
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 14),
+                InkWell(
+                  onTap: _pickDueDate,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Due date',
+                      prefixIcon: Icon(Icons.event_outlined),
+                    ),
+                    child: Text(
+                      _dueDate == null ? 'No deadline' : _shortDate(_dueDate!),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _dueDate == null ? const Color(0xFF8A999E) : const Color(0xFF41555D),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF103A48),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Create task'),
+        ),
+      ],
+    );
+  }
 }

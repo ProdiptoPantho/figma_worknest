@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -391,6 +391,254 @@ class AdminMonthlySummary {
   }
 }
 
+enum LeaveStatus {
+  pending('Pending'),
+  approved('Approved'),
+  rejected('Rejected'),
+  cancelled('Cancelled');
+
+  const LeaveStatus(this.label);
+
+  final String label;
+
+  static LeaveStatus fromApi(Object? value) {
+    switch (value?.toString().toLowerCase()) {
+      case 'approved':
+        return LeaveStatus.approved;
+      case 'rejected':
+        return LeaveStatus.rejected;
+      case 'cancelled':
+      case 'canceled':
+        return LeaveStatus.cancelled;
+      default:
+        return LeaveStatus.pending;
+    }
+  }
+}
+
+class LeaveTypeInfo {
+  const LeaveTypeInfo({
+    required this.leaveType,
+    required this.allowance,
+    required this.description,
+  });
+
+  final String leaveType;
+  final int allowance;
+  final String description;
+
+  factory LeaveTypeInfo.fromJson(Map<String, dynamic> json) {
+    return LeaveTypeInfo(
+      leaveType: json['leaveType']?.toString() ?? 'Annual',
+      allowance: _asInt(json['allowance']),
+      description: json['description']?.toString() ?? '',
+    );
+  }
+}
+
+class LeaveBalance {
+  const LeaveBalance({
+    required this.leaveType,
+    required this.allowance,
+    required this.usedDays,
+    required this.pendingDays,
+    required this.remainingDays,
+  });
+
+  final String leaveType;
+  final int allowance;
+  final int usedDays;
+  final int pendingDays;
+  final int remainingDays;
+
+  factory LeaveBalance.fromJson(Map<String, dynamic> json) {
+    return LeaveBalance(
+      leaveType: json['leaveType']?.toString() ?? 'Annual',
+      allowance: _asInt(json['allowance']),
+      usedDays: _asInt(json['usedDays']),
+      pendingDays: _asInt(json['pendingDays']),
+      remainingDays: _asInt(json['remainingDays']),
+    );
+  }
+}
+
+class LeaveRequestRecord {
+  const LeaveRequestRecord({
+    required this.id,
+    required this.userId,
+    required this.userEmail,
+    required this.leaveType,
+    required this.startDate,
+    required this.endDate,
+    required this.totalDays,
+    required this.reason,
+    required this.status,
+    required this.reviewComment,
+    required this.reviewedByEmail,
+    required this.createdAt,
+    required this.reviewedAt,
+  });
+
+  final String id;
+  final String userId;
+  final String userEmail;
+  final String leaveType;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final int totalDays;
+  final String? reason;
+  final LeaveStatus status;
+  final String? reviewComment;
+  final String? reviewedByEmail;
+  final DateTime? createdAt;
+  final DateTime? reviewedAt;
+
+  bool get isPending => status == LeaveStatus.pending;
+
+  factory LeaveRequestRecord.fromJson(Map<String, dynamic> json) {
+    return LeaveRequestRecord(
+      id: json['id']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? '',
+      userEmail: json['userEmail']?.toString() ?? '',
+      leaveType: json['leaveType']?.toString() ?? 'Annual',
+      startDate: _parseApiDate(json['startDate']),
+      endDate: _parseApiDate(json['endDate']),
+      totalDays: _asInt(json['totalDays']),
+      reason: json['reason'] as String?,
+      status: LeaveStatus.fromApi(json['status']),
+      reviewComment: json['reviewComment'] as String?,
+      reviewedByEmail: json['reviewedByEmail'] as String?,
+      createdAt: _parseApiDate(json['createdAtUtc']),
+      reviewedAt: _parseApiDate(json['reviewedAtUtc']),
+    );
+  }
+}
+
+class MyLeave {
+  const MyLeave({
+    required this.year,
+    required this.balances,
+    required this.requests,
+    required this.pendingCount,
+    required this.approvedDays,
+  });
+
+  final int year;
+  final List<LeaveBalance> balances;
+  final List<LeaveRequestRecord> requests;
+  final int pendingCount;
+  final int approvedDays;
+
+  int get remainingDays =>
+      balances.fold(0, (total, balance) => total + balance.remainingDays);
+
+  factory MyLeave.fromJson(Map<String, dynamic> json) {
+    final rawBalances = json['balances'];
+    final rawRequests = json['requests'];
+    return MyLeave(
+      year: _asInt(json['year']),
+      balances: rawBalances is List
+          ? rawBalances
+                .whereType<Map<String, dynamic>>()
+                .map(LeaveBalance.fromJson)
+                .toList()
+          : const [],
+      requests: rawRequests is List
+          ? rawRequests
+                .whereType<Map<String, dynamic>>()
+                .map(LeaveRequestRecord.fromJson)
+                .toList()
+          : const [],
+      pendingCount: _asInt(json['pendingCount']),
+      approvedDays: _asInt(json['approvedDays']),
+    );
+  }
+}
+
+class AdminLeaveList {
+  const AdminLeaveList({
+    required this.requests,
+    required this.totalCount,
+    required this.page,
+    required this.pageSize,
+    required this.totalPages,
+  });
+
+  final List<LeaveRequestRecord> requests;
+  final int totalCount;
+  final int page;
+  final int pageSize;
+  final int totalPages;
+
+  factory AdminLeaveList.fromJson(Map<String, dynamic> json) {
+    final rawRequests = json['requests'];
+    return AdminLeaveList(
+      requests: rawRequests is List
+          ? rawRequests
+                .whereType<Map<String, dynamic>>()
+                .map(LeaveRequestRecord.fromJson)
+                .toList()
+          : const [],
+      totalCount: _asInt(json['totalCount']),
+      page: _asInt(json['page']),
+      pageSize: _asInt(json['pageSize']),
+      totalPages: _asInt(json['totalPages']),
+    );
+  }
+}
+
+class LeaveTypeTotal {
+  const LeaveTypeTotal({required this.leaveType, required this.approvedDays});
+
+  final String leaveType;
+  final int approvedDays;
+
+  factory LeaveTypeTotal.fromJson(Map<String, dynamic> json) {
+    return LeaveTypeTotal(
+      leaveType: json['leaveType']?.toString() ?? 'Annual',
+      approvedDays: _asInt(json['approvedDays']),
+    );
+  }
+}
+
+class LeaveSummary {
+  const LeaveSummary({
+    required this.year,
+    required this.pendingCount,
+    required this.approvedCount,
+    required this.rejectedCount,
+    required this.cancelledCount,
+    required this.approvedDays,
+    required this.byType,
+  });
+
+  final int year;
+  final int pendingCount;
+  final int approvedCount;
+  final int rejectedCount;
+  final int cancelledCount;
+  final int approvedDays;
+  final List<LeaveTypeTotal> byType;
+
+  factory LeaveSummary.fromJson(Map<String, dynamic> json) {
+    final rawTypes = json['byType'];
+    return LeaveSummary(
+      year: _asInt(json['year']),
+      pendingCount: _asInt(json['pendingCount']),
+      approvedCount: _asInt(json['approvedCount']),
+      rejectedCount: _asInt(json['rejectedCount']),
+      cancelledCount: _asInt(json['cancelledCount']),
+      approvedDays: _asInt(json['approvedDays']),
+      byType: rawTypes is List
+          ? rawTypes
+                .whereType<Map<String, dynamic>>()
+                .map(LeaveTypeTotal.fromJson)
+                .toList()
+          : const [],
+    );
+  }
+}
+
 class HrmApiClient {
   HrmApiClient({http.Client? client}) : _client = client ?? http.Client();
 
@@ -695,6 +943,117 @@ class HrmApiClient {
               .map(AttendanceRecord.fromJson)
               .toList()
         : const [];
+  }
+
+  // ============ LEAVE ============
+
+  Future<List<LeaveTypeInfo>> getLeaveTypes() async {
+    final response = await _authorizedRequest(
+      (headers) =>
+          _client.get(Uri.parse('$baseUrl/api/leave/types'), headers: headers),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load leave types.');
+    return _decodeList(response).map(LeaveTypeInfo.fromJson).toList();
+  }
+
+  Future<MyLeave> getMyLeave({int? year}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/leave/my')
+            .replace(queryParameters: {if (year != null) 'year': '$year'}),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load your leave records.');
+    return MyLeave.fromJson(_decode(response));
+  }
+
+  Future<LeaveRequestRecord> requestLeave({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? reason,
+  }) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/leave/requests'),
+        headers: headers,
+        body: jsonEncode({
+          'leaveType': leaveType,
+          'startDate': _formatApiDate(startDate),
+          'endDate': _formatApiDate(endDate),
+          'reason': reason,
+        }),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
+    return LeaveRequestRecord.fromJson(_decode(response));
+  }
+
+  Future<void> cancelLeaveRequest(String requestId) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/leave/requests/$requestId/cancel'),
+        headers: headers,
+        body: jsonEncode(const <String, String>{}),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to cancel the leave request.');
+  }
+
+  Future<AdminLeaveList> getLeaveRequests({
+    LeaveStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/leave/requests').replace(
+          queryParameters: {
+            if (status != null) 'status': status.name,
+            'page': '$page',
+            'pageSize': '$pageSize',
+          },
+        ),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load leave requests.');
+    return AdminLeaveList.fromJson(_decode(response));
+  }
+
+  Future<void> approveLeaveRequest(String requestId, {String? comment}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/leave/requests/$requestId/approve'),
+        headers: headers,
+        body: jsonEncode({'comment': comment}),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to approve the leave request.');
+  }
+
+  Future<void> rejectLeaveRequest(String requestId, {String? comment}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/leave/requests/$requestId/reject'),
+        headers: headers,
+        body: jsonEncode({'comment': comment}),
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to reject the leave request.');
+  }
+
+  Future<LeaveSummary> getLeaveSummary({int? year}) async {
+    final response = await _authorizedRequest(
+      (headers) => _client.get(
+        Uri.parse('$baseUrl/api/leave/summary')
+            .replace(queryParameters: {if (year != null) 'year': '$year'}),
+        headers: headers,
+      ),
+    );
+    _throwIfNotSuccessful(response, 'Unable to load the leave summary.');
+    return LeaveSummary.fromJson(_decode(response));
   }
 
   Future<http.Response> _authorizedRequest(

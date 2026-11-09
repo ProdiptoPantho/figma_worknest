@@ -84,7 +84,79 @@ void main() {
     expect(find.text('Clock out'), findsOneWidget);
   });
 
-  testWidgets('forgot password sets a new password through the API', (
+  testWidgets('pressing Enter on the password field signs in', (
+    WidgetTester tester,
+  ) async {
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'alex@company.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'securepass');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Good afternoon, Alex'), findsOneWidget);
+  });
+
+  testWidgets('my leave page shows balances and history', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('My leave').first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Request time away and track your leave history.'),
+      findsOneWidget,
+    );
+    expect(find.text('Available balance'), findsOneWidget);
+    expect(find.textContaining('Leave balance'), findsOneWidget);
+    expect(find.text('Annual'), findsWidgets);
+    expect(find.text('Approved'), findsWidgets);
+    expect(api.myLeaveCalls, 1);
+  });
+
+  testWidgets('manager can approve a leave request', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('user3@company.com'), findsWidgets);
+    expect(find.text('Approve'), findsWidgets);
+
+    await tester.tap(find.text('Approve').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Approve leave?'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Approve')));
+    await tester.pumpAndSettle();
+
+    expect(api.approveCalls, 1);
+    expect(find.text('Leave request approved.'), findsOneWidget);
+  });
+
+  testWidgets('forgot password sends a reset link and confirms by message', (
     WidgetTester tester,
   ) async {
     final api = _FakeApiClient();
@@ -102,38 +174,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.requestedResetEmail, 'user3@company.com');
-    expect(find.text('Set a new password'), findsOneWidget);
-
-    await tester.enterText(
-      find.byKey(const Key('reset-token')),
-      'test-reset-token',
-    );
-    await tester.enterText(
-      find.byKey(const Key('reset-password')),
-      'NewPass123!',
-    );
-    await tester.enterText(
-      find.byKey(const Key('reset-confirm')),
-      'Different123!',
-    );
-    await tester.tap(find.text('Set new password'));
-    await tester.pumpAndSettle();
-    expect(find.text('Passwords do not match'), findsOneWidget);
-    expect(api.resetEmail, isNull);
-
-    await tester.enterText(
-      find.byKey(const Key('reset-confirm')),
-      'NewPass123!',
-    );
-    await tester.tap(find.text('Set new password'));
-    await tester.pumpAndSettle();
-
-    expect(api.resetEmail, 'user3@company.com');
-    expect(api.resetPasswordValue, 'NewPass123!');
-    expect(api.resetTokenValue, 'test-reset-token');
-    expect(find.text('Set a new password'), findsNothing);
+    expect(find.text('Reset your password'), findsNothing);
     expect(
-      find.text('Password updated. Sign in with your new password.'),
+      find.text(
+        'If the email exists, a password reset link has been sent to your inbox.',
+      ),
       findsOneWidget,
     );
   });
@@ -188,6 +233,10 @@ class _FakeApiClient extends HrmApiClient {
   int checkOutCalls = 0;
   int adminDailyCalls = 0;
   int adminSummaryCalls = 0;
+  int myLeaveCalls = 0;
+  int leaveRequestCalls = 0;
+  int approveCalls = 0;
+  int rejectCalls = 0;
   bool _checkedIn = false;
 
   static final DateTime _day = DateTime(2026, 11, 7);
@@ -357,6 +406,147 @@ class _FakeApiClient extends HrmApiClient {
           attendancePercentage: 95.2,
           averageWorkingHoursPerDay: 8.1,
         ),
+      ],
+    );
+  }
+
+  @override
+  Future<List<LeaveTypeInfo>> getLeaveTypes() async {
+    return const [
+      LeaveTypeInfo(
+        leaveType: 'Annual',
+        allowance: 20,
+        description: 'Planned time off',
+      ),
+      LeaveTypeInfo(
+        leaveType: 'Sick',
+        allowance: 10,
+        description: 'Health related leave',
+      ),
+      LeaveTypeInfo(
+        leaveType: 'Casual',
+        allowance: 5,
+        description: 'Short personal errands',
+      ),
+      LeaveTypeInfo(
+        leaveType: 'Unpaid',
+        allowance: 0,
+        description: 'Unpaid time off',
+      ),
+    ];
+  }
+
+  LeaveRequestRecord _leaveRecord({
+    String id = 'leave-1',
+    String userEmail = 'user3@company.com',
+    LeaveStatus status = LeaveStatus.pending,
+    String leaveType = 'Annual',
+    int totalDays = 2,
+  }) {
+    return LeaveRequestRecord(
+      id: id,
+      userId: 'user-3',
+      userEmail: userEmail,
+      leaveType: leaveType,
+      startDate: DateTime(2026, 11, 16),
+      endDate: DateTime(2026, 11, 17),
+      totalDays: totalDays,
+      reason: 'Family trip',
+      status: status,
+      reviewComment: null,
+      reviewedByEmail: null,
+      createdAt: DateTime(2026, 11, 1, 10),
+      reviewedAt: null,
+    );
+  }
+
+  @override
+  Future<MyLeave> getMyLeave({int? year}) async {
+    myLeaveCalls++;
+    return MyLeave(
+      year: year ?? 2026,
+      balances: const [
+        LeaveBalance(
+          leaveType: 'Annual',
+          allowance: 20,
+          usedDays: 4,
+          pendingDays: 2,
+          remainingDays: 14,
+        ),
+        LeaveBalance(
+          leaveType: 'Sick',
+          allowance: 10,
+          usedDays: 1,
+          pendingDays: 0,
+          remainingDays: 9,
+        ),
+      ],
+      requests: [
+        _leaveRecord(id: 'leave-approved', status: LeaveStatus.approved),
+      ],
+      pendingCount: 1,
+      approvedDays: 4,
+    );
+  }
+
+  @override
+  Future<LeaveRequestRecord> requestLeave({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? reason,
+  }) async {
+    leaveRequestCalls++;
+    return _leaveRecord(leaveType: leaveType);
+  }
+
+  @override
+  Future<void> cancelLeaveRequest(String requestId) async {}
+
+  @override
+  Future<AdminLeaveList> getLeaveRequests({
+    LeaveStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final requests = [
+      _leaveRecord(id: 'leave-pending'),
+      _leaveRecord(id: 'leave-done', status: LeaveStatus.approved),
+    ];
+    final filtered = status == null
+        ? requests
+        : requests.where((request) => request.status == status).toList();
+    return AdminLeaveList(
+      requests: filtered,
+      totalCount: filtered.length,
+      page: page,
+      pageSize: pageSize,
+      totalPages: 1,
+    );
+  }
+
+  @override
+  Future<void> approveLeaveRequest(String requestId, {String? comment}) async {
+    approveCalls++;
+  }
+
+  @override
+  Future<void> rejectLeaveRequest(String requestId, {String? comment}) async {
+    rejectCalls++;
+  }
+
+  @override
+  Future<LeaveSummary> getLeaveSummary({int? year}) async {
+    return LeaveSummary(
+      year: year ?? 2026,
+      pendingCount: 1,
+      approvedCount: 1,
+      rejectedCount: 0,
+      cancelledCount: 0,
+      approvedDays: 4,
+      byType: const [
+        LeaveTypeTotal(leaveType: 'Annual', approvedDays: 3),
+        LeaveTypeTotal(leaveType: 'Sick', approvedDays: 1),
       ],
     );
   }
