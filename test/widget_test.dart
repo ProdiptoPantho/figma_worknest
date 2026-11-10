@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:figma_worknest/api_client.dart';
 import 'package:figma_worknest/main.dart';
@@ -433,12 +434,117 @@ void main() {
       expect(field.decoration?.fillColor, const Color(0xFF0F172A));
     }
   });
+
+  testWidgets('manager can view document and approve leave request from document viewer', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('View document'), findsWidgets);
+
+    // Tap View document on the first request
+    await tester.tap(find.text('View document').first);
+    await tester.pumpAndSettle();
+
+    // Verify document viewer dialog opens with official certificate letterhead & details
+    expect(find.text('VERIFIED RECORD'), findsOneWidget);
+    expect(find.text('APPLICANT & LEAVE SPECIFICATION'), findsOneWidget);
+    expect(find.text('STATEMENT OF REASON & JUSTIFICATION'), findsOneWidget);
+    expect(find.text('Approve request'), findsOneWidget);
+    expect(find.text('Reject request'), findsOneWidget);
+
+    // Tap Approve request directly inside the document viewer
+    await tester.tap(find.text('Approve request'));
+    await tester.pumpAndSettle();
+
+    // Verify approval confirmation dialog opens and confirm
+    expect(find.text('Approve leave?'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Approve')));
+    await tester.pumpAndSettle();
+
+    expect(api.approveCalls, 1);
+    expect(find.text('Leave request approved.'), findsOneWidget);
+  });
+
+  testWidgets('system wide enter button works on leave rejection dialog', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Reject').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reject leave?'), findsOneWidget);
+
+    // Press Enter to confirm rejection
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(api.rejectCalls, 1);
+    expect(find.text('Leave request rejected.'), findsOneWidget);
+  });
+
+  testWidgets('attendance complete banner in dark mode uses dark teal surface, not blinding white', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient(checkedOutToday: true);
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    // Switch to dark theme
+    await tester.tap(find.text('Dark theme'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Attendance complete for today.'), findsOneWidget);
+
+    final text = tester.widget<Text>(find.text('Attendance complete for today.'));
+    expect(text.style?.color, const Color(0xFF2DD4BF));
+
+    final container = tester.widget<Container>(
+      find.ancestor(
+        of: find.text('Attendance complete for today.'),
+        matching: find.byType(Container),
+      ).first,
+    );
+    final decor = container.decoration as BoxDecoration?;
+    expect(decor?.color, const Color(0xFF132A26));
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
-  _FakeApiClient({this.hasTodayRecord = true, this.fakeRestoredSession});
+  _FakeApiClient({
+    this.hasTodayRecord = true,
+    this.checkedOutToday = false,
+    this.fakeRestoredSession,
+  });
 
   final bool hasTodayRecord;
+  final bool checkedOutToday;
   final AuthSession? fakeRestoredSession;
 
   String? requestedResetEmail;
@@ -499,6 +605,7 @@ class _FakeApiClient extends HrmApiClient {
       hasRecord: true,
       record: _record(
         checkInAt: DateTime(2026, 11, 7, 9),
+        checkOutAt: checkedOutToday ? DateTime(2026, 11, 7, 17) : null,
         status: AttendanceStatus.present,
       ),
     );

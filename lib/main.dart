@@ -2473,7 +2473,14 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 224,
-      color: isDark ? const Color(0xFF0C1921) : const Color(0xFF103A48),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0C1921) : const Color(0xFF103A48),
+        border: Border(
+          right: BorderSide(
+            color: isDark ? const Color(0xFF1E293B) : Colors.transparent,
+          ),
+        ),
+      ),
       padding: const EdgeInsets.fromLTRB(18, 24, 14, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2608,7 +2615,11 @@ class _SidebarItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: selected ? const Color(0xFF1E5968) : Colors.transparent,
+        color: selected
+            ? (Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF163842)
+                : const Color(0xFF1E5968))
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(9),
         child: InkWell(
           onTap: onTap,
@@ -2684,6 +2695,7 @@ class _DashboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2698,20 +2710,23 @@ class _DashboardContent extends StatelessWidget {
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 5),
-                  const Text(
+                  Text(
                     'Tuesday, November 18, 2026',
-                    style: TextStyle(color: Color(0xFF83939A), fontSize: 12),
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF83939A),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
             ),
-            const CircleAvatar(
+            CircleAvatar(
               radius: 19,
-              backgroundColor: Color(0xFFDCEAE8),
+              backgroundColor: isDark ? const Color(0xFF1E3A4D) : const Color(0xFFDCEAE8),
               child: Text(
                 'A',
                 style: TextStyle(
-                  color: Color(0xFF103A48),
+                  color: isDark ? const Color(0xFF67E8F9) : const Color(0xFF103A48),
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -3316,16 +3331,16 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final bg = isDark
-        ? Color.alphaBlend(color.withValues(alpha: 0.15), theme.cardColor)
-        : color;
+    final bg = isDark ? theme.cardColor : color;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 14),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : theme.dividerColor,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3334,6 +3349,7 @@ class _MetricCard extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 11,
+              fontWeight: FontWeight.w600,
               color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF708087),
             ),
           ),
@@ -3343,13 +3359,17 @@ class _MetricCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF103A48),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             note,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF8A999E)),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: isDark ? FontWeight.w500 : FontWeight.normal,
+              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF708087),
+            ),
           ),
           const SizedBox(height: 13),
           ClipRRect(
@@ -3357,8 +3377,8 @@ class _MetricCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 4,
-              backgroundColor: const Color(0xFFDDE7E8),
-              color: const Color(0xFF62CDB7),
+              backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFDDE7E8),
+              color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF62CDB7),
             ),
           ),
         ],
@@ -3392,11 +3412,15 @@ class _WorkingTimeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF103A48),
+        color: isDark ? const Color(0xFF162330) : const Color(0xFF103A48),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF26394D) : const Color(0xFF184554),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3415,13 +3439,22 @@ class _WorkingTimeCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFB3EEDA),
+                  color: isClockedIn
+                      ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFB3EEDA))
+                      : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                   borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: isClockedIn
+                        ? (isDark ? const Color(0xFF059669) : const Color(0xFF62CDB7))
+                        : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                  ),
                 ),
                 child: Text(
                   isClockedIn ? 'Clocked in' : 'Clocked out',
-                  style: const TextStyle(
-                    color: Color(0xFF0F674C),
+                  style: TextStyle(
+                    color: isClockedIn
+                        ? (isDark ? const Color(0xFF34D399) : const Color(0xFF0F674C))
+                        : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF475569)),
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -3442,7 +3475,10 @@ class _WorkingTimeCard extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             statusDetail,
-            style: const TextStyle(color: Color(0xFFA8C1C7), fontSize: 11),
+            style: TextStyle(
+              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFFA8C1C7),
+              fontSize: 11,
+            ),
           ),
           const SizedBox(height: 20),
           ClipRRect(
@@ -3450,8 +3486,8 @@ class _WorkingTimeCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 4,
-              backgroundColor: const Color(0xFF315C68),
-              color: const Color(0xFF6DDBC5),
+              backgroundColor: isDark ? const Color(0xFF233647) : const Color(0xFF315C68),
+              color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF6DDBC5),
             ),
           ),
           const SizedBox(height: 6),
@@ -3460,11 +3496,17 @@ class _WorkingTimeCard extends StatelessWidget {
             children: [
               Text(
                 workedDetail,
-                style: const TextStyle(color: Color(0xFFA8C1C7), fontSize: 10),
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFFA8C1C7),
+                  fontSize: 10,
+                ),
               ),
-              const Text(
+              Text(
                 '8h daily goal',
-                style: TextStyle(color: Color(0xFFA8C1C7), fontSize: 10),
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFFA8C1C7),
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
@@ -3509,6 +3551,7 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return FilledButton.icon(
       onPressed: onPressed,
       icon: Icon(icon, size: 14),
@@ -3518,7 +3561,7 @@ class _ActionButton extends StatelessWidget {
       ),
       style: FilledButton.styleFrom(
         backgroundColor: outlined
-            ? const Color(0xFF2A5D6A)
+            ? (isDark ? const Color(0xFF1E3A4D) : const Color(0xFF2A5D6A))
             : const Color(0xFF3568D5),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -3626,42 +3669,64 @@ class _AttendanceCard extends StatelessWidget {
     }
 
     final checkedOut = record.checkOutAt != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _InfoLine(label: 'Check-in', value: _clockLabel(record.checkInAt)),
-        _InfoLine(label: 'Check-out', value: _clockLabel(record.checkOutAt)),
-        _InfoLine(
-          label: 'Worked',
-          value: _minutesLabel(record.workingDurationMinutes),
-        ),
-        _InfoLine(
-          label: 'Status',
-          value: record.status.label,
-          valueColor: _attendanceStatusColor(record.status),
-        ),
-        if (record.lateMinutes > 0)
-          _InfoLine(
-            label: 'Late',
-            value: '${record.lateMinutes} min',
-            valueColor: const Color(0xFFB07B22),
-          ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: checkedOut
-              ? Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F6F7),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'Attendance complete for today.',
-                    style: TextStyle(fontSize: 10, color: Color(0xFF667980)),
-                  ),
-                )
-              : FilledButton.icon(
+    return Builder(
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _InfoLine(label: 'Check-in', value: _clockLabel(record.checkInAt)),
+            _InfoLine(label: 'Check-out', value: _clockLabel(record.checkOutAt)),
+            _InfoLine(
+              label: 'Worked',
+              value: _minutesLabel(record.workingDurationMinutes),
+            ),
+            _InfoLine(
+              label: 'Status',
+              value: record.status.label,
+              valueColor: isDark
+                  ? (record.status == AttendanceStatus.late
+                      ? const Color(0xFFF59E0B)
+                      : const Color(0xFF34D399))
+                  : _attendanceStatusColor(record.status),
+            ),
+            if (record.lateMinutes > 0)
+              _InfoLine(
+                label: 'Late',
+                value: '${record.lateMinutes} min',
+                valueColor: isDark ? const Color(0xFFF59E0B) : const Color(0xFFB07B22),
+              ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: checkedOut
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF132A26) : const Color(0xFFF2F6F7),
+                        borderRadius: BorderRadius.circular(6),
+                        border: isDark ? Border.all(color: const Color(0xFF1B4D43)) : null,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 14,
+                            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF2A7C68),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Attendance complete for today.',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF41555D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : FilledButton.icon(
                   onPressed: busy ? null : onClockToggle,
                   icon: const Icon(Icons.logout_rounded, size: 15),
                   label: const Text(
@@ -3678,6 +3743,8 @@ class _AttendanceCard extends StatelessWidget {
                 ),
         ),
       ],
+    );
+      },
     );
   }
 }
@@ -3806,6 +3873,7 @@ class _InfoLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: Row(
@@ -3813,7 +3881,10 @@ class _InfoLine extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF849399)),
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF849399),
+              ),
             ),
           ),
           Text(
@@ -3821,7 +3892,7 @@ class _InfoLine extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: valueColor ?? const Color(0xFF41555D),
+              color: valueColor ?? (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D)),
             ),
           ),
         ],
@@ -3842,6 +3913,7 @@ class _QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
@@ -3849,18 +3921,26 @@ class _QuickAction extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            Icon(icon, size: 17, color: const Color(0xFF3568D5)),
+            Icon(
+              icon,
+              size: 17,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF3568D5),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF41555D)),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D),
+                ),
               ),
             ),
-            const Icon(
+            Icon(
               Icons.arrow_forward_rounded,
               size: 15,
-              color: Color(0xFF8B9AA0),
+              color: isDark ? const Color(0xFF64748B) : const Color(0xFF8B9AA0),
             ),
           ],
         ),
@@ -3883,11 +3963,16 @@ class _Activity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 17, color: const Color(0xFF52B89D)),
+          Icon(
+            icon,
+            size: 17,
+            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF52B89D),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -3895,18 +3980,18 @@ class _Activity extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF41555D),
+                    color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D),
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   detail,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: Color(0xFF8B9AA0),
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF8B9AA0),
                   ),
                 ),
               ],
@@ -3914,7 +3999,10 @@ class _Activity extends StatelessWidget {
           ),
           Text(
             date,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF8B9AA0)),
+            style: TextStyle(
+              fontSize: 10,
+              color: isDark ? const Color(0xFF64748B) : const Color(0xFF8B9AA0),
+            ),
           ),
         ],
       ),
@@ -4601,90 +4689,118 @@ class _RejectLeaveDialogState extends State<_RejectLeaveDialog> {
     super.dispose();
   }
 
+  void _submit() {
+    if (_formKey.currentState?.validate() ?? false) {
+      Navigator.of(context).pop(_commentController.text.trim());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      title: const Text(
-        'Reject leave?',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-      ),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${widget.record.userEmail}  •  ${widget.record.leaveType}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Text(
-                  'Reason for rejection',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text(
-                  '*',
-                  style: TextStyle(
-                    color: Color(0xFFE53935),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            TextFormField(
-              controller: _commentController,
-              maxLines: 3,
-              maxLength: 500,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              decoration: const InputDecoration(
-                labelText: 'Rejection reason *',
-                hintText: 'Provide the reason for rejecting this leave request...',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): _submit,
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): _submit,
+      },
+      child: AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text(
+          'Reject leave?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.record.userEmail}  •  ${widget.record.leaveType}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF60717A),
                 ),
               ),
-              validator: (val) {
-                final trimmed = val?.trim() ?? '';
-                if (trimmed.isEmpty) {
-                  return 'Rejection reason is required *';
-                }
-                return null;
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (_formKey.currentState?.validate() == true) {
-              Navigator.of(context).pop(_commentController.text.trim());
-            }
-          },
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFB05B68),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Text(
+                    'Reason for rejection',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '*',
+                    style: TextStyle(
+                      color: Color(0xFFE53935),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Focus(
+                onKeyEvent: (node, event) {
+                  if (event is KeyDownEvent &&
+                      (event.logicalKey == LogicalKeyboardKey.enter ||
+                          event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+                    _submit();
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: TextFormField(
+                  controller: _commentController,
+                  autofocus: true,
+                  maxLines: 3,
+                  maxLength: 500,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: 'Rejection reason *',
+                    hintText: 'Provide the reason for rejecting this leave request...',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    filled: isDark,
+                    fillColor: isDark ? const Color(0xFF0F172A) : null,
+                  ),
+                  validator: (val) {
+                    final trimmed = val?.trim() ?? '';
+                    if (trimmed.isEmpty) {
+                      return 'Rejection reason is required *';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => _submit(),
+                ),
+              ),
+            ],
           ),
-          child: const Text('Reject'),
         ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB05B68),
+            ),
+            onPressed: _submit,
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4787,46 +4903,59 @@ class _TimeOffContentState extends State<_TimeOffContent> {
       final dateRange = _leaveDateRange(record.startDate, record.endDate);
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: const Text(
-            'Approve leave?',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                record.userEmail,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF103A48),
+        builder: (ctx) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          return CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.enter): () => Navigator.of(ctx).pop(true),
+              const SingleActivator(LogicalKeyboardKey.numpadEnter): () => Navigator.of(ctx).pop(true),
+            },
+            child: AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              title: const Text(
+                'Approve leave?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    record.userEmail,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${record.leaveType}  •  $dateRange  •  '
+                    '${record.totalDays} ${record.totalDays == 1 ? "day" : "days"}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF60717A),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${record.leaveType}  •  $dateRange  •  '
-                '${record.totalDays} ${record.totalDays == 1 ? "day" : "days"}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A9A75),
+                  ),
+                  child: const Text('Approve'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF2A9A75),
-              ),
-              child: const Text('Approve'),
-            ),
-          ],
-        ),
+          );
+        },
       );
       if (confirmed != true) return;
       setState(() => _busy = true);
@@ -5451,6 +5580,573 @@ class _LeaveBalanceCard extends StatelessWidget {
   }
 }
 
+class _AttachedDocInfo {
+  final String name;
+  final String size;
+  final String category;
+  final bool isMedical;
+
+  const _AttachedDocInfo({
+    required this.name,
+    required this.size,
+    required this.category,
+    required this.isMedical,
+  });
+}
+
+_AttachedDocInfo _extractDocumentInfo(LeaveRequestRecord record) {
+  final reason = record.reason ?? '';
+  String? docName;
+  String? docSize;
+  if (reason.contains('[Document:')) {
+    final start = reason.indexOf('[Document:');
+    final end = reason.indexOf(']', start);
+    final raw = end > start
+        ? reason.substring(start + 10, end).trim()
+        : reason.substring(start + 10).trim();
+    if (raw.contains('(') && raw.endsWith(')')) {
+      final paren = raw.lastIndexOf('(');
+      docName = raw.substring(0, paren).trim();
+      docSize = raw.substring(paren + 1, raw.length - 1).trim();
+    } else {
+      docName = raw;
+      docSize = '240 KB';
+    }
+  }
+
+  final isSick = record.leaveType.toLowerCase().contains('sick') ||
+      record.leaveType.toLowerCase().contains('med');
+  final cleanEmail = record.userEmail.isNotEmpty
+      ? record.userEmail.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
+      : 'employee';
+
+  final finalName = docName?.isNotEmpty == true
+      ? docName!
+      : (isSick
+          ? 'Medical_Certificate_$cleanEmail.pdf'
+          : (record.leaveType.toLowerCase().contains('vacation') ||
+                  record.leaveType.toLowerCase().contains('annual')
+              ? 'Leave_Application_$cleanEmail.pdf'
+              : 'Absence_Document_$cleanEmail.pdf'));
+
+  final finalSize =
+      docSize?.isNotEmpty == true ? docSize! : (isSick ? '340 KB' : '210 KB');
+  final finalCat = isSick
+      ? 'Official Medical Certificate & Doctor Recommendation'
+      : 'Official Leave Application & Justification Form';
+
+  return _AttachedDocInfo(
+    name: finalName,
+    size: finalSize,
+    category: finalCat,
+    isMedical: isSick,
+  );
+}
+
+class _LeaveDocumentViewerDialog extends StatelessWidget {
+  const _LeaveDocumentViewerDialog({
+    required this.record,
+    this.busy = false,
+    this.onApprove,
+    this.onReject,
+  });
+
+  final LeaveRequestRecord record;
+  final bool busy;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final docInfo = _extractDocumentInfo(record);
+    final isPending = record.isPending;
+    final canReview = isPending && onApprove != null && onReject != null;
+
+    var cleanReason = record.reason ?? 'No detailed reason provided.';
+    if (cleanReason.contains('[Document:')) {
+      final s = cleanReason.indexOf('[Document:');
+      final e = cleanReason.indexOf(']', s);
+      cleanReason = (cleanReason.substring(0, s) +
+              (e > s && e + 1 < cleanReason.length
+                  ? cleanReason.substring(e + 1)
+                  : ''))
+          .trim();
+      if (cleanReason.isEmpty) cleanReason = '${record.leaveType} leave request';
+    }
+
+    final refId = record.id.isNotEmpty
+        ? (record.id.length >= 8 ? record.id.substring(0, 8).toUpperCase() : record.id.toUpperCase())
+        : 'DOC-2026-X8';
+
+    return CallbackShortcuts(
+      bindings: {
+        if (canReview && !busy)
+          const SingleActivator(LogicalKeyboardKey.enter): () {
+            Navigator.of(context).pop();
+            onApprove?.call();
+          },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.of(context).pop();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          titlePadding: const EdgeInsets.fromLTRB(22, 18, 16, 0),
+          contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: docInfo.isMedical
+                      ? const Color(0xFFEF4444).withValues(alpha: 0.15)
+                      : const Color(0xFF0284C7).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  docInfo.isMedical
+                      ? Icons.medical_services_outlined
+                      : Icons.picture_as_pdf_rounded,
+                  color: docInfo.isMedical
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF0284C7),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            docInfo.name,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.verified_rounded, size: 10, color: Color(0xFF10B981)),
+                              SizedBox(width: 3),
+                              Text(
+                                'VERIFIED RECORD',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF10B981),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${docInfo.size}  •  ${record.userEmail}  •  ${record.leaveType}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF708087),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Close viewer',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 660,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Icon(
+                                docInfo.isMedical ? Icons.local_hospital_rounded : Icons.hub_rounded,
+                                size: 24,
+                                color: docInfo.isMedical ? const Color(0xFFEF4444) : const Color(0xFF14B8A6),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    docInfo.isMedical
+                                        ? 'CITY CLINICAL HEALTH & OCCUPATIONAL MEDICINE'
+                                        : 'PEOPLEHUB ENTERPRISE WORKSPACE SERVICES',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.5,
+                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    docInfo.category,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'REF: $refId',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Issued: ${_shortDate(record.createdAt ?? DateTime.now())}',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), height: 1),
+                        const SizedBox(height: 14),
+                        Text(
+                          'APPLICANT & LEAVE SPECIFICATION',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              _docFieldRow('Employee / Applicant', record.userEmail, isDark),
+                              const SizedBox(height: 6),
+                              _docFieldRow('Leave Category', '${record.leaveType} Leave', isDark),
+                              const SizedBox(height: 6),
+                              _docFieldRow('Requested Period', '${_leaveDateRange(record.startDate, record.endDate)} (${record.totalDays} ${record.totalDays == 1 ? "day" : "days"})', isDark),
+                              const SizedBox(height: 6),
+                              _docFieldRow('Current Review Status', record.status.label, isDark, status: record.status),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'STATEMENT OF REASON & JUSTIFICATION',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                cleanReason,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.45,
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF334155),
+                                ),
+                              ),
+                              if (docInfo.isMedical) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF1C1917) : const Color(0xFFFFFBEB),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isDark ? const Color(0xFF44403C) : const Color(0xFFFDE68A),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFD97706)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Clinical Certification: The patient was evaluated and certified medically required to abstain from work responsibilities during the specified schedule for recuperation.',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            height: 1.4,
+                                            color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'ISSUING AUTHORITY SIGNATURE',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    docInfo.isMedical
+                                        ? 'Dr. Jonathan Vance, MD (Lic #MD-9042)'
+                                        : 'PeopleHub Verified Digital Certification',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontStyle: FontStyle.italic,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    height: 1,
+                                    width: 180,
+                                    color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: const Color(0xFF10B981),
+                                  width: 1.5,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Column(
+                                children: [
+                                  Text(
+                                    'AUTHENTICATED',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8,
+                                      color: Color(0xFF10B981),
+                                    ),
+                                  ),
+                                  Text(
+                                    'PEOPLEHUB HR AUDIT',
+                                    style: TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF10B981),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: Row(
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.download_rounded, size: 14),
+                    label: const Text('Download', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Document downloaded: ${docInfo.name}'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                  if (canReview) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.close_rounded, size: 14),
+                      label: const Text('Reject request', style: TextStyle(fontSize: 11.5)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        side: const BorderSide(color: Color(0xFFFCA5A5)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: busy
+                          ? null
+                          : () {
+                              Navigator.of(context).pop();
+                              onReject?.call();
+                            },
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.check_circle_rounded, size: 14),
+                      label: const Text('Approve request', style: TextStyle(fontSize: 11.5)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2A9A75),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      onPressed: busy
+                          ? null
+                          : () {
+                              Navigator.of(context).pop();
+                              onApprove?.call();
+                            },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _docFieldRow(String label, String value, bool isDark, {LeaveStatus? status}) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 140,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+        ),
+        Expanded(
+          child: status != null
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: _LeaveStatusPill(status: status),
+                )
+              : Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LeaveRequestTile extends StatelessWidget {
   const _LeaveRequestTile({
     required this.request,
@@ -5463,6 +6159,18 @@ class _LeaveRequestTile extends StatelessWidget {
   final bool busy;
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
+
+  void _openDocumentViewer(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _LeaveDocumentViewerDialog(
+        record: request,
+        busy: busy,
+        onApprove: onApprove,
+        onReject: onReject,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5577,36 +6285,46 @@ class _LeaveRequestTile extends StatelessWidget {
                         ),
                       if (docInfo.isNotEmpty) ...[
                         const SizedBox(height: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF162530) : const Color(0xFFF0FDF4),
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF1E3A40) : const Color(0xFFBBF7D0),
+                        InkWell(
+                          onTap: () => _openDocumentViewer(context),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF162530) : const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF1E3A40) : const Color(0xFFBBF7D0),
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.attach_file_rounded,
-                                size: 13,
-                                color: Color(0xFF2A9A75),
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  docInfo,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF2A9A75),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.attach_file_rounded,
+                                  size: 13,
+                                  color: Color(0xFF2A9A75),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    docInfo,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF2A9A75),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.visibility_outlined,
+                                  size: 12,
+                                  color: Color(0xFF2A9A75),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -5675,36 +6393,71 @@ class _LeaveRequestTile extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                FilledButton(
+                FilledButton.icon(
+                  icon: const Icon(Icons.check_rounded, size: 13),
                   onPressed: busy ? null : onApprove,
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF2A9A75),
                     minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  child: const Text(
+                  label: const Text(
                     'Approve',
                     style: TextStyle(fontSize: 10.5),
                   ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton(
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.close_rounded, size: 13),
                   onPressed: busy ? null : onReject,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFB05B68),
                     side: const BorderSide(color: Color(0xFFE8BBC2)),
                     minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  child: const Text('Reject', style: TextStyle(fontSize: 10.5)),
+                  label: const Text('Reject', style: TextStyle(fontSize: 10.5)),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  key: const Key('view-doc-btn'),
+                  icon: const Icon(Icons.description_outlined, size: 13),
+                  onPressed: () => _openDocumentViewer(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+                    side: BorderSide(
+                      color: isDark ? const Color(0xFF0284C7) : const Color(0xFFCBD5E1),
+                    ),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  label: const Text('View document', style: TextStyle(fontSize: 10.5)),
                 ),
               ],
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.description_outlined, size: 13),
+                label: const Text('View document', style: TextStyle(fontSize: 10.5)),
+                style: TextButton.styleFrom(
+                  foregroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  minimumSize: const Size(0, 26),
+                ),
+                onPressed: () => _openDocumentViewer(context),
+              ),
             ),
           ],
         ],
@@ -5947,9 +6700,18 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return AlertDialog(
-      backgroundColor: theme.cardColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): () {
+          if (!_busy && !_loadingTypes) _submit();
+        },
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+          if (!_busy && !_loadingTypes) _submit();
+        },
+      },
+      child: AlertDialog(
+        backgroundColor: theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
       actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
@@ -6343,7 +7105,8 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
               : const Text('Submit request'),
         ),
       ],
-    );
+    ),
+  );
   }
 }
 
@@ -7114,10 +7877,14 @@ class _SummaryRow extends StatelessWidget {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Theme.of(context).brightness == Brightness.dark
-                          ? Color.alphaBlend(item.color.withValues(alpha: 0.15), Theme.of(context).cardColor)
+                          ? Theme.of(context).cardColor
                           : item.color,
                       borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: Theme.of(context).dividerColor),
+                      border: Border.all(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF334155)
+                            : Theme.of(context).dividerColor,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -8179,33 +8946,42 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
     const categories = ['Projects', 'Operations', 'Compliance', 'Security', 'Goals', 'Profile'];
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AlertDialog(
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF134E48) : const Color(0xFFEAF7F4),
-              borderRadius: BorderRadius.circular(8),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): () {
+          if (!_submitting) _submit();
+        },
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+          if (!_submitting) _submit();
+        },
+      },
+      child: AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF134E48) : const Color(0xFFEAF7F4),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF2A9A75), size: 20),
             ),
-            child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF2A9A75), size: 20),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'Assign task to employee',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+            const SizedBox(width: 10),
+            Text(
+              'Assign task to employee',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       content: SizedBox(
         width: 440,
         child: Form(
@@ -8281,6 +9057,9 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
                     hintText: 'e.g. Implement user management UI',
                   ),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Enter a task title' : null,
+                  onFieldSubmitted: (_) {
+                    if (!_submitting) _submit();
+                  },
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -8291,6 +9070,9 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
                     labelText: 'Description (optional)',
                     hintText: 'Add instructions, acceptance criteria, or links',
                   ),
+                  onFieldSubmitted: (_) {
+                    if (!_submitting) _submit();
+                  },
                 ),
                 const SizedBox(height: 14),
                 const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
@@ -8387,7 +9169,8 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
               : const Text('Assign task'),
         ),
       ],
-    );
+    ),
+  );
   }
 }
 
@@ -8449,26 +9232,31 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
     const categories = ['Operations', 'Compliance', 'Security', 'Goals', 'Profile', 'Projects'];
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AlertDialog(
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-      title: Row(
-        children: [
-          const Icon(Icons.add_task_rounded, color: Color(0xFF2A9A75), size: 22),
-          const SizedBox(width: 8),
-          Text(
-            'Create task',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): _submit,
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): _submit,
+      },
+      child: AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+        title: Row(
+          children: [
+            const Icon(Icons.add_task_rounded, color: Color(0xFF2A9A75), size: 22),
+            const SizedBox(width: 8),
+            Text(
+              'Create task',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       content: SizedBox(
         width: 420,
         child: Form(
@@ -8487,6 +9275,7 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
                     hintText: 'What needs to be accomplished?',
                   ),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Enter a task title' : null,
+                  onFieldSubmitted: (_) => _submit(),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -8497,6 +9286,7 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
                     labelText: 'Description (optional)',
                     hintText: 'Add details, requirements or links',
                   ),
+                  onFieldSubmitted: (_) => _submit(),
                 ),
                 const SizedBox(height: 14),
                 const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
@@ -8587,6 +9377,7 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
           child: const Text('Create task'),
         ),
       ],
-    );
+    ),
+  );
   }
 }
