@@ -748,6 +748,10 @@ class TaskRecord {
     this.dueDate,
     this.assignedToUserId,
     this.assignedToEmail,
+    this.assignedByUserId,
+    this.assignedByEmail,
+    this.statusDisplay,
+    this.priorityDisplay,
     this.createdAt,
     this.completedAt,
   });
@@ -761,6 +765,10 @@ class TaskRecord {
   final DateTime? dueDate;
   final String? assignedToUserId;
   final String? assignedToEmail;
+  final String? assignedByUserId;
+  final String? assignedByEmail;
+  final String? statusDisplay;
+  final String? priorityDisplay;
   final DateTime? createdAt;
   final DateTime? completedAt;
 
@@ -773,10 +781,14 @@ class TaskRecord {
       priority: (json['priority'] ?? json['Priority'])?.toString() ?? 'Medium',
       category: (json['category'] ?? json['Category']) as String? ?? 'Operations',
       dueDate: _parseApiDate(json['dueDate'] ?? json['DueDate']),
-      assignedToUserId: (json['assignedToUserId'] ?? json['AssignedToUserId']) as String?,
-      assignedToEmail: (json['assignedToEmail'] ?? json['AssignedToEmail']) as String?,
-      createdAt: _parseApiDate(json['createdAt'] ?? json['CreatedAt']),
-      completedAt: _parseApiDate(json['completedAt'] ?? json['CompletedAt']),
+      assignedToUserId: (json['assignedToUserId'] ?? json['userId'] ?? json['UserId']) as String?,
+      assignedToEmail: (json['assignedToEmail'] ?? json['assigneeEmail'] ?? json['AssigneeEmail']) as String?,
+      assignedByUserId: (json['assignedByUserId'] ?? json['AssignedByUserId']) as String?,
+      assignedByEmail: (json['assignedByEmail'] ?? json['AssignedByEmail']) as String?,
+      statusDisplay: (json['statusDisplay'] ?? json['StatusDisplay']) as String?,
+      priorityDisplay: (json['priorityDisplay'] ?? json['PriorityDisplay']) as String?,
+      createdAt: _parseApiDate(json['createdAt'] ?? json['createdAtUtc'] ?? json['CreatedAtUtc'] ?? json['CreatedAt']),
+      completedAt: _parseApiDate(json['completedAt'] ?? json['completedAtUtc'] ?? json['CompletedAtUtc'] ?? json['CompletedAt']),
     );
   }
 }
@@ -827,6 +839,7 @@ class HrmApiClient {
   final Map<String, LeaveStatus> _reviewedStatuses = {};
   final Map<String, String> _reviewedComments = {};
   final List<LeaveRequestRecord> _localRequests = [];
+  final List<TaskRecord> _assignedTasks = [];
   final http.Client _client;
   String? _accessToken;
   String? _refreshToken;
@@ -1695,6 +1708,98 @@ class HrmApiClient {
       }
     } catch (_) {}
     return const [];
+  }
+
+  Future<TaskRecord> assignTask({
+    required String title,
+    required String assigneeUserId,
+    String? assigneeEmail,
+    String? description,
+    String? category,
+    String? priority,
+    DateTime? dueDate,
+  }) async {
+    final payload = {
+      'title': title.trim(),
+      'assigneeUserId': assigneeUserId,
+      if (assigneeEmail != null && assigneeEmail.isNotEmpty) 'assigneeEmail': assigneeEmail,
+      if (description != null && description.isNotEmpty) 'description': description.trim(),
+      if (category != null && category.isNotEmpty) 'category': category,
+      if (priority != null && priority.isNotEmpty) 'priority': priority,
+      if (dueDate != null) 'dueDate': _formatApiDate(dueDate),
+    };
+
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.post(
+          Uri.parse('$baseUrl/api/tasks/assigned'),
+          headers: headers,
+          body: jsonEncode(payload),
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final record = TaskRecord.fromJson(_decode(response));
+        _assignedTasks.removeWhere((t) => t.id == record.id);
+        _assignedTasks.insert(0, record);
+        return record;
+      }
+    } catch (_) {}
+
+    final fallback = TaskRecord(
+      id: 'task-${DateTime.now().millisecondsSinceEpoch}',
+      title: title.trim(),
+      description: description ?? '',
+      status: 'Todo',
+      priority: priority ?? 'Medium',
+      category: category ?? 'Projects',
+      dueDate: dueDate,
+      assignedToUserId: assigneeUserId,
+      assignedToEmail: assigneeEmail,
+      createdAt: DateTime.now(),
+    );
+    _assignedTasks.insert(0, fallback);
+    return fallback;
+  }
+
+  Future<List<TaskRecord>> getAssignedTasks({
+    String? status,
+    String? priority,
+    String? category,
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    List<TaskRecord> remote = const [];
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(
+          Uri.parse('$baseUrl/api/tasks/assigned').replace(
+            queryParameters: {
+              if (status != null && status.isNotEmpty) 'status': status,
+              if (priority != null && priority.isNotEmpty) 'priority': priority,
+              if (category != null && category.isNotEmpty && category != 'All') 'category': category,
+              if (search != null && search.isNotEmpty) 'search': search,
+              'page': '$page',
+              'pageSize': '$pageSize',
+            },
+          ),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final decoded = _decode(response);
+        final rawTasks = (decoded['tasks'] ?? decoded['items'] ?? decoded['Tasks']) as List<dynamic>? ?? const [];
+        remote = rawTasks.map((t) => TaskRecord.fromJson(t as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+
+    final all = [..._assignedTasks];
+    for (final r in remote) {
+      if (!all.any((t) => t.id == r.id)) {
+        all.add(r);
+      }
+    }
+    return all;
   }
 
   Future<LeaveSummary> getLeaveSummary({int? year}) async {

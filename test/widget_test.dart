@@ -361,6 +361,29 @@ void main() {
     expect(summary.totalTasks, greaterThanOrEqualTo(0));
   });
 
+  testWidgets('project manager can assign task to employee', (
+    WidgetTester tester,
+  ) async {
+    final api = _FakeApiClient();
+    final task = await api.assignTask(
+      title: 'Setup CI/CD pipeline',
+      assigneeUserId: '6ad3da0e-3b91-4657-85d0-258a29f25df3',
+      assigneeEmail: 'user1@company.com',
+      description: 'Configure automated build on GitHub Actions',
+      category: 'Projects',
+      priority: 'High',
+    );
+
+    expect(task.title, 'Setup CI/CD pipeline');
+    expect(task.assignedToEmail, 'user1@company.com');
+    expect(task.assignedToUserId, '6ad3da0e-3b91-4657-85d0-258a29f25df3');
+    expect(task.category, 'Projects');
+    expect(task.priority, 'High');
+
+    final assignedList = await api.getAssignedTasks();
+    expect(assignedList.any((t) => t.id == task.id), isTrue);
+  });
+
   testWidgets('session restoration automatically navigates to dashboard', (
     WidgetTester tester,
   ) async {

@@ -370,6 +370,54 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
+class _QuickLoginChip extends StatelessWidget {
+  const _QuickLoginChip({
+    required this.label,
+    required this.email,
+    required this.password,
+    required this.onTap,
+  });
+
+  final String label;
+  final String email;
+  final String password;
+  final void Function(String email, String password) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ActionChip(
+      avatar: Icon(
+        label.contains('Project')
+            ? Icons.assignment_ind_outlined
+            : (label.contains('HR')
+                ? Icons.badge_outlined
+                : (label.contains('Admin')
+                    ? Icons.admin_panel_settings_outlined
+                    : Icons.person_outline_rounded)),
+        size: 13,
+        color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+      ),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+        ),
+      ),
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+      side: BorderSide(
+        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      visualDensity: VisualDensity.compact,
+      onPressed: () => onTap(email, password),
+    );
+  }
+}
+
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
@@ -856,6 +904,60 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Center(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _QuickLoginChip(
+                  label: 'Project Manager',
+                  email: 'pm@company.com',
+                  password: 'PmPass123!',
+                  onTap: (e, p) {
+                    setState(() {
+                      _emailController.text = e;
+                      _passwordController.text = p;
+                    });
+                  },
+                ),
+                _QuickLoginChip(
+                  label: 'HR Manager',
+                  email: 'hrmanager@company.com',
+                  password: 'HrPass123!',
+                  onTap: (e, p) {
+                    setState(() {
+                      _emailController.text = e;
+                      _passwordController.text = p;
+                    });
+                  },
+                ),
+                _QuickLoginChip(
+                  label: 'Admin',
+                  email: 'admin@company.com',
+                  password: 'AdminPass123!',
+                  onTap: (e, p) {
+                    setState(() {
+                      _emailController.text = e;
+                      _passwordController.text = p;
+                    });
+                  },
+                ),
+                _QuickLoginChip(
+                  label: 'Employee',
+                  email: 'user1@company.com',
+                  password: 'UserPass123!',
+                  onTap: (e, p) {
+                    setState(() {
+                      _emailController.text = e;
+                      _passwordController.text = p;
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1850,6 +1952,7 @@ class _RolePolicy {
     },
     _Role.projectManager: {
       _Permission.viewDashboard,
+      _Permission.manageEmployees,
       _Permission.manageTeam,
       _Permission.manageReports,
       _Permission.selfService,
@@ -1989,7 +2092,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   bool get _isManager {
     final roles = widget.session.roles.map((role) => role.toLowerCase());
-    return roles.contains('super admin') || roles.contains('hr manager');
+    return roles.contains('super admin') ||
+        roles.contains('hr manager') ||
+        roles.contains('project manager') ||
+        roles.contains('pm');
   }
 
   static _Role _roleFromApi(List<String> roles) {
@@ -2222,6 +2328,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     _NavPage.employees
                               ? _EmployeeManagementContent(
                                   api: widget.api,
+                                  session: widget.session,
                                   onAction: _showMessage,
                                 )
                               : _navigation[_selectedIndex].page ==
@@ -6398,10 +6505,12 @@ class _EmployeeManagementContent extends StatefulWidget {
   const _EmployeeManagementContent({
     required this.api,
     required this.onAction,
+    this.session,
   });
 
   final HrmApiClient api;
   final ValueChanged<String> onAction;
+  final AuthSession? session;
 
   @override
   State<_EmployeeManagementContent> createState() =>
@@ -6419,6 +6528,23 @@ class _EmployeeManagementContentState
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _openAssignTask(ApiUser user) async {
+    final s = widget.session;
+    if (s == null) return;
+    final created = await showDialog<EmployeeTask>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AssignTaskDialog(
+        api: widget.api,
+        session: s,
+        initialEmployee: user,
+      ),
+    );
+    if (created != null && mounted) {
+      widget.onAction('Task "${created.title}" assigned to ${user.email} successfully.');
+    }
   }
 
   Future<void> _load() async {
@@ -6545,7 +6671,7 @@ class _EmployeeManagementContentState
                             dataRowMinHeight: 46,
                             dataRowMaxHeight: 56,
                             columnSpacing: 24,
-                            columns: const ['Employee', 'Roles', 'Status', 'Account ID']
+                            columns: const ['Employee', 'Roles', 'Status', 'Account ID', 'Action']
                                 .map((t) => DataColumn(
                                       label: Text(
                                         t,
@@ -6640,6 +6766,17 @@ class _EmployeeManagementContentState
                                         fontSize: 10,
                                         fontFamily: 'monospace',
                                         color: Color(0xFF8A999E),
+                                      ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    FilledButton.tonalIcon(
+                                      onPressed: () => _openAssignTask(user),
+                                      icon: const Icon(Icons.assignment_ind_outlined, size: 13),
+                                      label: const Text('Assign task', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                                      style: FilledButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                                       ),
                                     ),
                                   ),
@@ -7189,6 +7326,9 @@ class EmployeeTask {
     required this.createdAt,
     this.completedAt,
     this.assigneeEmail,
+    this.assigneeUserId,
+    this.assignedByUserId,
+    this.assignedByEmail,
   });
 
   final String id;
@@ -7201,6 +7341,9 @@ class EmployeeTask {
   final DateTime createdAt;
   DateTime? completedAt;
   String? assigneeEmail;
+  String? assigneeUserId;
+  String? assignedByUserId;
+  String? assignedByEmail;
 }
 
 class _TaskManagerContent extends StatefulWidget {
@@ -7229,6 +7372,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       category: 'Compliance',
       dueDate: DateTime.now().add(const Duration(days: 2)),
       createdAt: DateTime.now().subtract(const Duration(days: 1)),
+      assigneeEmail: 'user1@company.com',
     ),
     EmployeeTask(
       id: 'task-2',
@@ -7239,6 +7383,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       category: 'Operations',
       dueDate: DateTime.now().add(const Duration(days: 1)),
       createdAt: DateTime.now().subtract(const Duration(days: 3)),
+      assigneeEmail: 'user2@company.com',
     ),
     EmployeeTask(
       id: 'task-3',
@@ -7250,6 +7395,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       dueDate: DateTime.now().subtract(const Duration(days: 2)),
       createdAt: DateTime.now().subtract(const Duration(days: 5)),
       completedAt: DateTime.now().subtract(const Duration(days: 1)),
+      assigneeEmail: 'user3@company.com',
     ),
     EmployeeTask(
       id: 'task-4',
@@ -7260,6 +7406,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       category: 'Goals',
       dueDate: DateTime.now().add(const Duration(days: 6)),
       createdAt: DateTime.now().subtract(const Duration(days: 2)),
+      assigneeEmail: 'user1@company.com',
     ),
     EmployeeTask(
       id: 'task-5',
@@ -7270,19 +7417,44 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       category: 'Profile',
       dueDate: DateTime.now().add(const Duration(days: 14)),
       createdAt: DateTime.now().subtract(const Duration(days: 4)),
+      assigneeEmail: 'user2@company.com',
     ),
   ];
 
   TaskState? _statusFilter;
   TaskPriority? _priorityFilter;
   String _categoryFilter = 'All';
+  String _assigneeFilter = 'All';
   String _search = '';
   List<String> _backendCategories = const [];
+
+  bool get _canAssign {
+    final roles = widget.session.roles.map((r) => r.toLowerCase()).toList();
+    return roles.contains('project manager') ||
+        roles.contains('pm') ||
+        roles.contains('super admin') ||
+        roles.contains('hr manager') ||
+        widget.session.permissions.contains('tasks.assign');
+  }
 
   @override
   void initState() {
     super.initState();
     _loadLiveTaskData();
+  }
+
+  TaskState _mapStatus(String? s) {
+    final lower = (s ?? '').toLowerCase();
+    if (lower.contains('done') || lower.contains('complete')) return TaskState.done;
+    if (lower.contains('progress') || lower.contains('active')) return TaskState.inProgress;
+    return TaskState.todo;
+  }
+
+  TaskPriority _mapPriority(String? p) {
+    final lower = (p ?? '').toLowerCase();
+    if (lower.contains('high')) return TaskPriority.high;
+    if (lower.contains('low')) return TaskPriority.low;
+    return TaskPriority.medium;
   }
 
   Future<void> _loadLiveTaskData() async {
@@ -7293,6 +7465,47 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       if (categories.isNotEmpty && mounted) {
         setState(() {
           _backendCategories = categories;
+        });
+      }
+    } catch (_) {}
+
+    try {
+      final List<TaskRecord> remoteTasks = [];
+      if (_canAssign) {
+        final assigned = await client.getAssignedTasks();
+        remoteTasks.addAll(assigned);
+      }
+      final myTasks = await client.getTasks();
+      for (final t in myTasks) {
+        if (!remoteTasks.any((r) => r.id == t.id)) {
+          remoteTasks.add(t);
+        }
+      }
+
+      if (remoteTasks.isNotEmpty && mounted) {
+        final mapped = remoteTasks.map((t) {
+          return EmployeeTask(
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: _mapStatus(t.status),
+            priority: _mapPriority(t.priority),
+            category: t.category,
+            dueDate: t.dueDate,
+            createdAt: t.createdAt ?? DateTime.now(),
+            completedAt: t.completedAt,
+            assigneeEmail: t.assignedToEmail,
+            assigneeUserId: t.assignedToUserId,
+            assignedByUserId: t.assignedByUserId,
+            assignedByEmail: t.assignedByEmail,
+          );
+        }).toList();
+
+        setState(() {
+          for (final m in mapped) {
+            _tasks.removeWhere((existing) => existing.id == m.id);
+            _tasks.insert(0, m);
+          }
         });
       }
     } catch (_) {}
@@ -7308,12 +7521,14 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       if (_statusFilter != null && task.status != _statusFilter) return false;
       if (_priorityFilter != null && task.priority != _priorityFilter) return false;
       if (_categoryFilter != 'All' && task.category != _categoryFilter) return false;
+      if (_assigneeFilter != 'All' && task.assigneeEmail != _assigneeFilter) return false;
       if (_search.isNotEmpty) {
         final q = _search.toLowerCase();
         final matchTitle = task.title.toLowerCase().contains(q);
         final matchDesc = task.description.toLowerCase().contains(q);
         final matchCat = task.category.toLowerCase().contains(q);
-        if (!matchTitle && !matchDesc && !matchCat) return false;
+        final matchAssignee = (task.assigneeEmail ?? '').toLowerCase().contains(q);
+        if (!matchTitle && !matchDesc && !matchCat && !matchAssignee) return false;
       }
       return true;
     }).toList();
@@ -7384,7 +7599,28 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
     });
   }
 
+  Future<void> _openAssignTask([ApiUser? preselected]) async {
+    final client = widget.api;
+    if (client == null) return;
+    final created = await showDialog<EmployeeTask>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AssignTaskDialog(
+        api: client,
+        session: widget.session,
+        initialEmployee: preselected,
+      ),
+    );
+    if (created != null && mounted) {
+      setState(() => _tasks.insert(0, created));
+      widget.onAction('Task "${created.title}" assigned to ${created.assigneeEmail ?? 'employee'} successfully.');
+    }
+  }
+
   Future<void> _openCreateTask() async {
+    if (_canAssign) {
+      return _openAssignTask();
+    }
     final created = await showDialog<EmployeeTask>(
       context: context,
       builder: (ctx) => _CreateTaskDialog(userEmail: widget.session.email),
@@ -7402,16 +7638,23 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       'All',
       ...(_backendCategories.isNotEmpty
           ? _backendCategories
-          : const ['Operations', 'Compliance', 'Security', 'Goals', 'Profile', 'Projects']),
+          : const ['Projects', 'Operations', 'Compliance', 'Security', 'Goals', 'Profile']),
+    }.toList();
+
+    final distinctAssignees = {
+      'All',
+      ..._tasks.map((t) => t.assigneeEmail).where((e) => e != null && e.isNotEmpty),
     }.toList();
 
     return _Workspace(
-      title: 'Task manager',
-      subtitle: 'Organize work, track deliverables, and hit your milestones on time.',
+      title: _canAssign ? 'Project & team tasks' : 'Task manager',
+      subtitle: _canAssign
+          ? 'Assign deliverables to employees, set deadlines, and track completion across your team.'
+          : 'Organize work, track deliverables, and hit your milestones on time.',
       action: FilledButton.icon(
         onPressed: _openCreateTask,
-        icon: const Icon(Icons.add_task_rounded, size: 16),
-        label: const Text('New task'),
+        icon: Icon(_canAssign ? Icons.assignment_ind_rounded : Icons.add_task_rounded, size: 16),
+        label: Text(_canAssign ? 'Assign task to employee' : 'New task'),
         style: FilledButton.styleFrom(
           backgroundColor: const Color(0xFF103A48),
           foregroundColor: Colors.white,
@@ -7428,12 +7671,12 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
         ),
         const SizedBox(height: 18),
         _Panel(
-          title: 'My active tasks',
+          title: _canAssign ? 'Project task deliverables' : 'My active tasks',
           trailing: SizedBox(
             width: 220,
             child: TextField(
               decoration: const InputDecoration(
-                hintText: 'Search tasks...',
+                hintText: 'Search tasks or assignee...',
                 prefixIcon: Icon(Icons.search, size: 16),
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -7477,14 +7720,45 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
                       )),
                 ],
               ),
+              if (_canAssign && distinctAssignees.length > 2) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'Assignee:',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                    ),
+                    ...distinctAssignees.map((assignee) => ChoiceChip(
+                          label: Text(
+                            assignee ?? 'Unassigned',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: _assigneeFilter == assignee ? FontWeight.w700 : FontWeight.w500,
+                              color: _assigneeFilter == assignee ? Colors.white : const Color(0xFF475569),
+                            ),
+                          ),
+                          selected: _assigneeFilter == assignee,
+                          onSelected: (_) => setState(() => _assigneeFilter = assignee ?? 'All'),
+                          selectedColor: const Color(0xFF0284C7),
+                          backgroundColor: const Color(0xFFF1F5F9),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                          showCheckmark: false,
+                        )),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               if (tasks.isEmpty)
                 _EmptyState(
                   icon: Icons.task_alt_rounded,
                   title: 'No tasks found',
-                  message: _search.isNotEmpty || _statusFilter != null
-                      ? 'No tasks match your current filter.'
-                      : 'You are all clear! Add a new task to stay organized.',
+                  message: _search.isNotEmpty || _statusFilter != null || _assigneeFilter != 'All'
+                      ? 'No tasks match your current filters.'
+                      : 'You are all clear! Add or assign a new task to keep things moving.',
                 )
               else
                 ListView.separated(
@@ -7613,7 +7887,7 @@ class _EmployeeTaskCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
-                          color: isDone ? const Color(0xFF8A999E) : const Color(0xFF103A48),
+                          color: isDone ? const Color(0xFF8A999E) : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48)),
                           decoration: isDone ? TextDecoration.lineThrough : null,
                         ),
                       ),
@@ -7642,28 +7916,61 @@ class _EmployeeTaskCard extends StatelessWidget {
                     task.description,
                     style: TextStyle(
                       fontSize: 11,
-                      color: isDone ? const Color(0xFFA8B5BA) : const Color(0xFF60717A),
+                      color: isDone
+                          ? const Color(0xFFA8B5BA)
+                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF60717A)),
                       height: 1.35,
                     ),
                   ),
                 ],
                 const SizedBox(height: 8),
                 Wrap(
-                  spacing: 12,
+                  spacing: 10,
+                  runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    if (task.assigneeEmail != null && task.assigneeEmail!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF93C5FD),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.person_outline_rounded,
+                              size: 11,
+                              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF2563EB),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Assigned to ${task.assigneeEmail}',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF1D4ED8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF0F4F6),
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF0F4F6),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         task.category,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF5A6D73),
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF5A6D73),
                         ),
                       ),
                     ),
@@ -7736,6 +8043,354 @@ class _EmployeeTaskCard extends StatelessWidget {
   }
 }
 
+class _AssignTaskDialog extends StatefulWidget {
+  const _AssignTaskDialog({
+    required this.api,
+    required this.session,
+    this.initialEmployee,
+  });
+
+  final HrmApiClient api;
+  final AuthSession session;
+  final ApiUser? initialEmployee;
+
+  @override
+  State<_AssignTaskDialog> createState() => _AssignTaskDialogState();
+}
+
+class _AssignTaskDialogState extends State<_AssignTaskDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _descController = TextEditingController();
+  TaskPriority _priority = TaskPriority.high;
+  String _category = 'Projects';
+  DateTime? _dueDate;
+  bool _submitting = false;
+  String? _error;
+
+  List<ApiUser> _employees = const [];
+  ApiUser? _selectedEmployee;
+  bool _loadingEmployees = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEmployees();
+  }
+
+  Future<void> _loadEmployees() async {
+    try {
+      final list = await widget.api.listUsers();
+      if (!mounted) return;
+      setState(() {
+        _employees = list;
+        _loadingEmployees = false;
+        if (widget.initialEmployee != null) {
+          _selectedEmployee = list.firstWhere(
+            (u) => u.id == widget.initialEmployee!.id || u.email == widget.initialEmployee!.email,
+            orElse: () => widget.initialEmployee!,
+          );
+        } else if (list.isNotEmpty) {
+          _selectedEmployee = list.firstWhere(
+            (u) => u.email.startsWith('user1'),
+            orElse: () => list.first,
+          );
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingEmployees = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDueDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? today.add(const Duration(days: 3)),
+      firstDate: today,
+      lastDate: DateTime(today.year + 2, 12, 31),
+      helpText: 'Select task due date',
+    );
+    if (picked != null) {
+      setState(() => _dueDate = picked);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final emp = _selectedEmployee;
+    if (emp == null) {
+      setState(() => _error = 'Please select an employee.');
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      final record = await widget.api.assignTask(
+        title: _titleController.text.trim(),
+        assigneeUserId: emp.id.isNotEmpty ? emp.id : '6ad3da0e-3b91-4657-85d0-258a29f25df3',
+        assigneeEmail: emp.email,
+        description: _descController.text.trim(),
+        category: _category,
+        priority: _priority.label,
+        dueDate: _dueDate,
+      );
+
+      final task = EmployeeTask(
+        id: record.id,
+        title: record.title,
+        description: record.description,
+        status: TaskState.todo,
+        priority: _priority,
+        category: record.category,
+        dueDate: record.dueDate ?? _dueDate,
+        createdAt: record.createdAt ?? DateTime.now(),
+        assigneeEmail: emp.email,
+        assigneeUserId: emp.id,
+        assignedByEmail: widget.session.email,
+      );
+
+      if (mounted) Navigator.of(context).pop(task);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = 'Failed to assign task. Please try again.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const categories = ['Projects', 'Operations', 'Compliance', 'Security', 'Goals', 'Profile'];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AlertDialog(
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF134E48) : const Color(0xFFEAF7F4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF2A9A75), size: 20),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Assign task to employee',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 440,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_error != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE5E8),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFB05B68)),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFFB05B68), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                const Text('Assign to employee *', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                _loadingEmployees
+                    ? const LinearProgressIndicator()
+                    : DropdownButtonFormField<ApiUser>(
+                        initialValue: _selectedEmployee,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.person_outline_rounded),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        items: _employees.map((emp) {
+                          final roleLabel = emp.roles.where((r) => r.toLowerCase() != 'user').join(', ');
+                          return DropdownMenuItem<ApiUser>(
+                            value: emp,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    emp.email,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                if (roleLabel.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      roleLabel,
+                                      style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B)),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedEmployee = val),
+                        validator: (val) => val == null ? 'Select an employee' : null,
+                      ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _titleController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Task title *',
+                    hintText: 'e.g. Implement user management UI',
+                  ),
+                  validator: (v) => (v?.trim().isEmpty ?? true) ? 'Enter a task title' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _descController,
+                  maxLines: 2,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    hintText: 'Add instructions, acceptance criteria, or links',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: categories
+                      .map((cat) => ChoiceChip(
+                            label: Text(
+                              cat,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _category == cat ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D)),
+                              ),
+                            ),
+                            selected: _category == cat,
+                            onSelected: (_) => setState(() => _category = cat),
+                            selectedColor: const Color(0xFF103A48),
+                            backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF3F7F9),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            showCheckmark: false,
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 14),
+                const Text('Priority', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: TaskPriority.values
+                      .map((p) => ChoiceChip(
+                            label: Text(
+                              p.label,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: _priority == p ? Colors.white : p.color,
+                              ),
+                            ),
+                            selected: _priority == p,
+                            onSelected: (_) => setState(() => _priority = p),
+                            selectedColor: p.color,
+                            backgroundColor: p.bgColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            showCheckmark: false,
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 14),
+                InkWell(
+                  onTap: _pickDueDate,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Due date',
+                      prefixIcon: Icon(Icons.event_outlined),
+                    ),
+                    child: Text(
+                      _dueDate == null ? 'No deadline' : _shortDate(_dueDate!),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _dueDate == null
+                            ? (isDark ? const Color(0xFF64748B) : const Color(0xFF8A999E))
+                            : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF103A48),
+            foregroundColor: Colors.white,
+          ),
+          child: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Assign task'),
+        ),
+      ],
+    );
+  }
+}
+
 class _CreateTaskDialog extends StatefulWidget {
   const _CreateTaskDialog({required this.userEmail});
   final String userEmail;
@@ -7792,23 +8447,24 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
   @override
   Widget build(BuildContext context) {
     const categories = ['Operations', 'Compliance', 'Security', 'Goals', 'Profile', 'Projects'];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AlertDialog(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
       actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.add_task_rounded, color: Color(0xFF2A9A75), size: 22),
-          SizedBox(width: 8),
+          const Icon(Icons.add_task_rounded, color: Color(0xFF2A9A75), size: 22),
+          const SizedBox(width: 8),
           Text(
             'Create task',
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF103A48),
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
             ),
           ),
         ],
@@ -7843,18 +8499,24 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF41555D))),
+                const Text('Category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: categories
                       .map((cat) => ChoiceChip(
-                            label: Text(cat, style: TextStyle(fontSize: 10, color: _category == cat ? Colors.white : const Color(0xFF41555D))),
+                            label: Text(
+                              cat,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _category == cat ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D)),
+                              ),
+                            ),
                             selected: _category == cat,
                             onSelected: (_) => setState(() => _category = cat),
                             selectedColor: const Color(0xFF103A48),
-                            backgroundColor: const Color(0xFFF3F7F9),
+                            backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF3F7F9),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             showCheckmark: false,
@@ -7862,13 +8524,20 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
                       .toList(),
                 ),
                 const SizedBox(height: 14),
-                const Text('Priority', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF41555D))),
+                const Text('Priority', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
                   children: TaskPriority.values
                       .map((p) => ChoiceChip(
-                            label: Text(p.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _priority == p ? Colors.white : p.color)),
+                            label: Text(
+                              p.label,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: _priority == p ? Colors.white : p.color,
+                              ),
+                            ),
                             selected: _priority == p,
                             onSelected: (_) => setState(() => _priority = p),
                             selectedColor: p.color,
@@ -7892,7 +8561,9 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
                       _dueDate == null ? 'No deadline' : _shortDate(_dueDate!),
                       style: TextStyle(
                         fontSize: 12,
-                        color: _dueDate == null ? const Color(0xFF8A999E) : const Color(0xFF41555D),
+                        color: _dueDate == null
+                            ? (isDark ? const Color(0xFF64748B) : const Color(0xFF8A999E))
+                            : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF41555D)),
                       ),
                     ),
                   ),
