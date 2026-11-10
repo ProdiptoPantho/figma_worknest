@@ -1536,6 +1536,7 @@ class _DialogError extends StatelessWidget {
 enum _Role {
   superAdmin('Super Admin / Owner'),
   hrManager('HR Manager'),
+  projectManager('Project Manager'),
   payrollOfficer('Payroll Officer / Accountant'),
   departmentManager('Department Manager'),
   employee('Employee');
@@ -1589,6 +1590,12 @@ class _RolePolicy {
       _Permission.manageLeave,
       _Permission.manageReports,
       _Permission.manageTeam,
+      _Permission.selfService,
+    },
+    _Role.projectManager: {
+      _Permission.viewDashboard,
+      _Permission.manageTeam,
+      _Permission.manageReports,
       _Permission.selfService,
     },
     _Role.payrollOfficer: {
@@ -1733,6 +1740,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final normalized = roles.map((role) => role.toLowerCase()).toList();
     if (normalized.contains('super admin')) return _Role.superAdmin;
     if (normalized.contains('hr manager')) return _Role.hrManager;
+    if (normalized.contains('project manager') || normalized.contains('pm')) return _Role.projectManager;
     if (normalized.contains('payroll officer')) return _Role.payrollOfficer;
     if (normalized.contains('department manager')) {
       return _Role.departmentManager;
@@ -1951,6 +1959,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     _NavPage.tasks
                               ? _TaskManagerContent(
                                   session: widget.session,
+                                  api: widget.api,
                                   onAction: _showMessage,
                                 )
                               : _navigation[_selectedIndex].page ==
@@ -4210,6 +4219,113 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+class _RejectLeaveDialog extends StatefulWidget {
+  const _RejectLeaveDialog({required this.record});
+
+  final LeaveRequestRecord record;
+
+  @override
+  State<_RejectLeaveDialog> createState() => _RejectLeaveDialogState();
+}
+
+class _RejectLeaveDialogState extends State<_RejectLeaveDialog> {
+  final _commentController = TextEditingController(text: 'Operational requirements');
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: const Text(
+        'Reject leave?',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.record.userEmail}  •  ${widget.record.leaveType}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Text(
+                  'Reason for rejection',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  '*',
+                  style: TextStyle(
+                    color: Color(0xFFE53935),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextFormField(
+              controller: _commentController,
+              maxLines: 3,
+              maxLength: 500,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              decoration: const InputDecoration(
+                labelText: 'Rejection reason *',
+                hintText: 'Provide the reason for rejecting this leave request...',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              validator: (val) {
+                final trimmed = val?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return 'Rejection reason is required *';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (_formKey.currentState?.validate() == true) {
+              Navigator.of(context).pop(_commentController.text.trim());
+            }
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFB05B68),
+          ),
+          child: const Text('Reject'),
+        ),
+      ],
+    );
+  }
+}
+
 class _TimeOffContent extends StatefulWidget {
   const _TimeOffContent({required this.api, required this.onAction});
 
@@ -4398,59 +4514,12 @@ class _TimeOffContentState extends State<_TimeOffContent> {
         if (mounted) setState(() => _busy = false);
       }
     } else {
-      // UX 2 + Bug 5: Comment dialog for rejection
-      final commentController = TextEditingController();
-      final confirmed = await showDialog<bool>(
+      // UX 2 + Bug 5: Comment dialog for rejection (mandatory rejection reason)
+      final comment = await showDialog<String>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: const Text(
-            'Reject leave?',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${record.userEmail}  •  ${record.leaveType}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF60717A)),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: commentController,
-                maxLines: 3,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for rejection (optional)',
-                  hintText: 'Let the employee know why...',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB05B68),
-              ),
-              child: const Text('Reject'),
-            ),
-          ],
-        ),
+        builder: (_) => _RejectLeaveDialog(record: record),
       );
-      final comment = commentController.text.trim();
-      commentController.dispose();
-      if (confirmed != true) return;
+      if (comment == null) return;
       setState(() => _busy = true);
       try {
         await widget.api.rejectLeaveRequest(
@@ -5042,13 +5111,15 @@ class _LeaveRequestTile extends StatelessWidget {
             ? 'hrmanager@company.com'
             : (request.userId == 'a34f2cde-fda4-4451-a66d-b6e281d630fa'
                 ? 'admin@company.com'
-                : (request.userId == '6ad3da0e-3b91-4657-85d0-258a29f25df3'
-                    ? 'user1@company.com'
-                    : (request.userId == '37a4d393-814d-495e-9930-772d704660af'
-                        ? 'user2@company.com'
-                        : (request.userId == '813407fd-da7a-4fdb-8aeb-097744f994ad'
-                            ? 'user3@company.com'
-                            : (request.userId.isNotEmpty ? 'Employee (${request.userId.substring(0, 8)})' : 'Employee'))))));
+                : (request.userId == 'c8f7e2d1-4b3a-4e9f-8a7c-1d2e3f4a5b6c'
+                    ? 'pm@company.com'
+                    : (request.userId == '6ad3da0e-3b91-4657-85d0-258a29f25df3'
+                        ? 'user1@company.com'
+                        : (request.userId == '37a4d393-814d-495e-9930-772d704660af'
+                            ? 'user2@company.com'
+                            : (request.userId == '813407fd-da7a-4fdb-8aeb-097744f994ad'
+                                ? 'user3@company.com'
+                                : (request.userId.isNotEmpty ? 'Employee (${request.userId.substring(0, 8)})' : 'Employee')))))));
     final initial = displayEmail.isNotEmpty
         ? displayEmail.substring(0, 1).toUpperCase()
         : '?';
@@ -6879,10 +6950,12 @@ class EmployeeTask {
 class _TaskManagerContent extends StatefulWidget {
   const _TaskManagerContent({
     required this.session,
+    this.api,
     required this.onAction,
   });
 
   final AuthSession session;
+  final HrmApiClient? api;
   final ValueChanged<String> onAction;
 
   @override
@@ -6948,6 +7021,26 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
   TaskPriority? _priorityFilter;
   String _categoryFilter = 'All';
   String _search = '';
+  List<String> _backendCategories = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLiveTaskData();
+  }
+
+  Future<void> _loadLiveTaskData() async {
+    final client = widget.api;
+    if (client == null) return;
+    try {
+      final categories = await client.getTaskCategories();
+      if (categories.isNotEmpty && mounted) {
+        setState(() {
+          _backendCategories = categories;
+        });
+      }
+    } catch (_) {}
+  }
 
   int get _totalCount => _tasks.length;
   int get _completedCount => _tasks.where((t) => t.status == TaskState.done).length;
@@ -7049,7 +7142,12 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
   @override
   Widget build(BuildContext context) {
     final tasks = _filteredTasks;
-    final categories = ['All', 'Operations', 'Compliance', 'Security', 'Goals', 'Profile'];
+    final categories = {
+      'All',
+      ...(_backendCategories.isNotEmpty
+          ? _backendCategories
+          : const ['Operations', 'Compliance', 'Security', 'Goals', 'Profile', 'Projects']),
+    }.toList();
 
     return _Workspace(
       title: 'Task manager',

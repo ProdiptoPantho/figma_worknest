@@ -735,6 +735,76 @@ class LeaveSummary {
   }
 }
 
+class TaskRecord {
+  const TaskRecord({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.status,
+    required this.priority,
+    required this.category,
+    this.dueDate,
+    this.assignedToUserId,
+    this.assignedToEmail,
+    this.createdAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String status;
+  final String priority;
+  final String category;
+  final DateTime? dueDate;
+  final String? assignedToUserId;
+  final String? assignedToEmail;
+  final DateTime? createdAt;
+  final DateTime? completedAt;
+
+  factory TaskRecord.fromJson(Map<String, dynamic> json) {
+    return TaskRecord(
+      id: (json['id'] ?? json['Id']) as String? ?? '',
+      title: (json['title'] ?? json['Title']) as String? ?? 'Untitled task',
+      description: (json['description'] ?? json['Description']) as String? ?? '',
+      status: (json['status'] ?? json['Status'])?.toString() ?? 'Todo',
+      priority: (json['priority'] ?? json['Priority'])?.toString() ?? 'Medium',
+      category: (json['category'] ?? json['Category']) as String? ?? 'Operations',
+      dueDate: _parseApiDate(json['dueDate'] ?? json['DueDate']),
+      assignedToUserId: (json['assignedToUserId'] ?? json['AssignedToUserId']) as String?,
+      assignedToEmail: (json['assignedToEmail'] ?? json['AssignedToEmail']) as String?,
+      createdAt: _parseApiDate(json['createdAt'] ?? json['CreatedAt']),
+      completedAt: _parseApiDate(json['completedAt'] ?? json['CompletedAt']),
+    );
+  }
+}
+
+class TaskSummary {
+  const TaskSummary({
+    required this.totalTasks,
+    required this.inProgressCount,
+    required this.completedCount,
+    required this.highPriorityCount,
+    required this.dueCount,
+  });
+
+  final int totalTasks;
+  final int inProgressCount;
+  final int completedCount;
+  final int highPriorityCount;
+  final int dueCount;
+
+  factory TaskSummary.fromJson(Map<String, dynamic> json) {
+    return TaskSummary(
+      totalTasks: (json['totalTasks'] ?? json['TotalTasks']) as int? ?? 0,
+      inProgressCount: (json['inProgressCount'] ?? json['InProgressCount']) as int? ?? 0,
+      completedCount: (json['completedCount'] ?? json['CompletedCount']) as int? ?? 0,
+      highPriorityCount: (json['highPriorityCount'] ?? json['HighPriorityCount']) as int? ?? 0,
+      dueCount: (json['dueCount'] ?? json['DueCount']) as int? ?? 0,
+    );
+  }
+}
+
 class HrmApiClient {
   HrmApiClient({http.Client? client}) : _client = client ?? http.Client();
 
@@ -891,14 +961,16 @@ class HrmApiClient {
       ),
     );
     _throwIfNotSuccessful(response, 'Unable to load accounts.');
-    final data = _decode(response)['items'] as List<dynamic>? ?? const [];
+    final map = _decode(response);
+    final raw = map['items'] ?? map['Items'] ?? map['users'] ?? map['Users'];
+    final data = raw is List ? raw : const [];
     return data
         .map(
           (item) => ApiUser(
-            id: item['id'] as String,
-            email: item['email'] as String,
-            roles: _stringList(item['roles']),
-            status: item['status'] as String? ?? 'Unknown',
+            id: (item['id'] ?? item['Id']) as String? ?? '',
+            email: (item['email'] ?? item['Email']) as String? ?? '',
+            roles: _stringList(item['roles'] ?? item['Roles']),
+            status: (item['status'] ?? item['Status']) as String? ?? 'Active',
           ),
         )
         .toList();
@@ -1237,33 +1309,117 @@ class HrmApiClient {
         (headers) => _client.post(
           Uri.parse('$baseUrl/api/leave/requests/$requestId/approve'),
           headers: headers,
-          body: jsonEncode({'comment': comment}),
+          body: jsonEncode({
+            if (comment != null && comment.isNotEmpty) 'comment': comment,
+          }),
         ),
       );
+      if (response.statusCode >= 400 && response.statusCode != 404) {
+        _throwIfNotSuccessful(response, 'Unable to approve the leave request.');
+      }
       if (response.statusCode == 200 || response.statusCode == 204) return;
+    } on ApiException {
+      rethrow;
     } catch (_) {}
   }
 
   Future<void> rejectLeaveRequest(String requestId, {String? comment}) async {
+    final effectiveComment = (comment != null && comment.trim().isNotEmpty)
+        ? comment.trim()
+        : 'Request rejected by manager';
     _reviewedStatuses[requestId] = LeaveStatus.rejected;
-    if (comment != null && comment.isNotEmpty) {
-      _reviewedComments[requestId] = comment;
-    }
-    // Cancel on remote backend so MongoDB no longer treats it as Pending
+    _reviewedComments[requestId] = effectiveComment;
+
+    // 1. Try cancel endpoint as fallback so remote state syncs
     try {
       await cancelLeaveRequest(requestId);
     } catch (_) {}
 
+    // 2. Try POST /api/leave/requests/$requestId/reject with both comment & reason keys
     try {
       final response = await _authorizedRequest(
         (headers) => _client.post(
           Uri.parse('$baseUrl/api/leave/requests/$requestId/reject'),
           headers: headers,
-          body: jsonEncode({'comment': comment}),
+          body: jsonEncode({
+            'comment': effectiveComment,
+            'reason': effectiveComment,
+          }),
         ),
       );
+      if (response.statusCode >= 400 && response.statusCode != 404) {
+        _throwIfNotSuccessful(response, 'Unable to reject the leave request.');
+      }
       if (response.statusCode == 200 || response.statusCode == 204) return;
+    } on ApiException {
+      rethrow;
     } catch (_) {}
+  }
+
+  // ============ TASKS API ============
+
+  Future<List<String>> getTaskCategories() async {
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(Uri.parse('$baseUrl/api/tasks/categories'), headers: headers),
+      );
+      if (response.statusCode == 200) {
+        final raw = jsonDecode(response.body);
+        if (raw is List) return raw.map((e) => e.toString()).toList();
+      }
+    } catch (_) {}
+    return const ['Compliance', 'Goals', 'Operations', 'Profile', 'Projects', 'Security'];
+  }
+
+  Future<TaskSummary> getTaskSummary() async {
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(Uri.parse('$baseUrl/api/tasks/summary'), headers: headers),
+      );
+      if (response.statusCode == 200) {
+        return TaskSummary.fromJson(_decode(response));
+      }
+    } catch (_) {}
+    return const TaskSummary(
+      totalTasks: 0,
+      inProgressCount: 0,
+      completedCount: 0,
+      highPriorityCount: 0,
+      dueCount: 0,
+    );
+  }
+
+  Future<List<TaskRecord>> getTasks({
+    String? status,
+    String? priority,
+    String? category,
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(
+          Uri.parse('$baseUrl/api/tasks').replace(
+            queryParameters: {
+              if (status != null && status.isNotEmpty) 'status': status,
+              if (priority != null && priority.isNotEmpty) 'priority': priority,
+              if (category != null && category.isNotEmpty && category != 'All') 'category': category,
+              if (search != null && search.isNotEmpty) 'search': search,
+              'page': '$page',
+              'pageSize': '$pageSize',
+            },
+          ),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final decoded = _decode(response);
+        final rawTasks = (decoded['tasks'] ?? decoded['items'] ?? decoded['Tasks']) as List<dynamic>? ?? const [];
+        return rawTasks.map((t) => TaskRecord.fromJson(t as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return const [];
   }
 
   Future<LeaveSummary> getLeaveSummary({int? year}) async {
@@ -1369,18 +1525,36 @@ class HrmApiClient {
   }
 
   String? _serverMessage(http.Response response) {
-    if (response.body.trim().isEmpty) return null;
+    final raw = response.body.trim();
+    if (raw.isEmpty) return null;
     try {
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(raw);
       if (decoded is String && decoded.trim().isNotEmpty) return decoded.trim();
       if (decoded is Map<String, dynamic>) {
-        for (final key in const ['message', 'detail', 'error', 'title']) {
+        for (final key in const [
+          'message',
+          'Message',
+          'detail',
+          'Detail',
+          'error',
+          'Error',
+          'title',
+          'Title',
+          'reason',
+          'Reason'
+        ]) {
           final value = decoded[key];
           if (value is String && value.trim().isNotEmpty) return value.trim();
         }
+        if (decoded['errors'] is Map) {
+          final errorsMap = decoded['errors'] as Map;
+          final first = errorsMap.values.firstOrNull;
+          if (first is List && first.isNotEmpty) return first.first.toString();
+          if (first != null) return first.toString();
+        }
       }
     } on FormatException {
-      return null;
+      if (!raw.startsWith('<') && raw.length < 200) return raw;
     }
     return null;
   }

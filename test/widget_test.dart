@@ -298,6 +298,67 @@ void main() {
     );
     expect(api.leaveRequestCalls, 0);
   });
+
+  testWidgets('leave rejection dialog enforces mandatory reason with red asterisk', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Reject').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reason for rejection'), findsOneWidget);
+    expect(find.text('Rejection reason *'), findsOneWidget);
+
+    // Clear text and attempt to reject without reason
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextFormField)), '');
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Reject')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rejection reason is required *'), findsOneWidget);
+    expect(api.rejectCalls, 0);
+
+    // Enter valid reason and confirm
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextFormField)), 'Staffing coverage requirements');
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Reject')));
+    await tester.pumpAndSettle();
+
+    expect(api.rejectCalls, 1);
+    expect(find.text('Leave request rejected.'), findsOneWidget);
+  });
+
+  testWidgets('rbac list users includes project manager and all seeded users', (
+    WidgetTester tester,
+  ) async {
+    final api = _FakeApiClient();
+    final users = await api.listUsers();
+    expect(users.length, greaterThanOrEqualTo(5));
+    expect(users.any((u) => u.email == 'pm@company.com'), isTrue);
+    expect(users.any((u) => u.email == 'admin@company.com'), isTrue);
+    expect(users.any((u) => u.email == 'hrmanager@company.com'), isTrue);
+  });
+
+  testWidgets('task manager loads categories and displays task counts', (
+    WidgetTester tester,
+  ) async {
+    final api = _FakeApiClient();
+    final categories = await api.getTaskCategories();
+    expect(categories, contains('Operations'));
+    expect(categories, contains('Compliance'));
+
+    final summary = await api.getTaskSummary();
+    expect(summary.totalTasks, greaterThanOrEqualTo(0));
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -613,6 +674,18 @@ class _FakeApiClient extends HrmApiClient {
   @override
   Future<void> rejectLeaveRequest(String requestId, {String? comment}) async {
     rejectCalls++;
+  }
+
+  @override
+  Future<List<ApiUser>> listUsers() async {
+    return const [
+      ApiUser(id: 'a34f2cde-fda4-4451-a66d-b6e281d630fa', email: 'admin@company.com', roles: ['super admin'], status: 'Active'),
+      ApiUser(id: '2237bc48-8948-4d7d-b22d-48e3635707ec', email: 'hrmanager@company.com', roles: ['hr manager'], status: 'Active'),
+      ApiUser(id: 'c8f7e2d1-4b3a-4e9f-8a7c-1d2e3f4a5b6c', email: 'pm@company.com', roles: ['project manager'], status: 'Active'),
+      ApiUser(id: '6ad3da0e-3b91-4657-85d0-258a29f25df3', email: 'user1@company.com', roles: ['employee'], status: 'Active'),
+      ApiUser(id: '37a4d393-814d-495e-9930-772d704660af', email: 'user2@company.com', roles: ['employee'], status: 'Active'),
+      ApiUser(id: '813407fd-da7a-4fdb-8aeb-097744f994ad', email: 'user3@company.com', roles: ['employee'], status: 'Active'),
+    ];
   }
 
   @override
