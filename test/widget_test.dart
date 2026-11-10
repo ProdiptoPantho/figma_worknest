@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 // This is a basic Flutter widget test.
 //
 // To perform an interaction with a widget in your test, use the WidgetTester
@@ -359,12 +360,63 @@ void main() {
     final summary = await api.getTaskSummary();
     expect(summary.totalTasks, greaterThanOrEqualTo(0));
   });
+
+  testWidgets('session restoration automatically navigates to dashboard', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _FakeApiClient(
+      fakeRestoredSession: const AuthSession(
+        accessToken: 'saved-token',
+        refreshToken: 'saved-refresh',
+        email: 'alex@company.com',
+        roles: ['hr manager'],
+        permissions: [],
+      ),
+    );
+    await tester.pumpWidget(
+      WorknestApp(api: api, autoRestoreSession: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Good afternoon, Alex'), findsOneWidget);
+    expect(find.text('Clock out'), findsOneWidget);
+  });
+
+  testWidgets('login screen respects dark theme with crisp contrast', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        themeMode: ThemeMode.dark,
+        darkTheme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: const Color(0xFF0F172A),
+          cardColor: const Color(0xFF1E293B),
+        ),
+        home: LoginPage(
+          api: _FakeApiClient(),
+          onAuthenticated: (_) {},
+        ),
+      ),
+    );
+
+    final card = tester.widget<Card>(find.byType(Card));
+    expect(card.color, const Color(0xFF1E293B));
+
+    final textFields = tester.widgetList<TextField>(find.byType(TextField));
+    for (final field in textFields) {
+      expect(field.style?.color, const Color(0xFFF1F5F9));
+      expect(field.decoration?.fillColor, const Color(0xFF0F172A));
+    }
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
-  _FakeApiClient({this.hasTodayRecord = true});
+  _FakeApiClient({this.hasTodayRecord = true, this.fakeRestoredSession});
 
   final bool hasTodayRecord;
+  final AuthSession? fakeRestoredSession;
 
   String? requestedResetEmail;
   String? resetEmail;
@@ -400,6 +452,9 @@ class _FakeApiClient extends HrmApiClient {
       notes: null,
     );
   }
+
+  @override
+  Future<AuthSession?> restoreSession() async => fakeRestoredSession;
 
   @override
   Future<AuthSession> login(String email, String password) async {

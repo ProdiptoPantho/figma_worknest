@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 import 'document_picker.dart';
@@ -38,10 +39,18 @@ PasswordResetLink? _resetLinkFromUri(Uri uri) {
 }
 
 class WorknestApp extends StatefulWidget {
-  const WorknestApp({super.key, this.api, this.resetLink});
+  const WorknestApp({
+    super.key,
+    this.api,
+    this.resetLink,
+    this.initialSession,
+    this.autoRestoreSession,
+  });
 
   final HrmApiClient? api;
   final PasswordResetLink? resetLink;
+  final AuthSession? initialSession;
+  final bool? autoRestoreSession;
 
   @override
   State<WorknestApp> createState() => _WorknestAppState();
@@ -52,24 +61,69 @@ class _WorknestAppState extends State<WorknestApp> {
   AuthSession? _session;
   PasswordResetLink? _pendingReset;
   ThemeMode _themeMode = ThemeMode.light;
+  bool _restoring = false;
 
   void _toggleTheme() {
     setState(() {
       _themeMode =
           _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
     });
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('wn_theme', _themeMode == ThemeMode.dark ? 'dark' : 'light');
+    }).catchError((_) {});
   }
 
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? HrmApiClient();
+    _session = widget.initialSession;
     _pendingReset = widget.resetLink ?? _resetLinkFromUri(Uri.base);
     if (_pendingReset != null && kIsWeb) {
       SystemNavigator.routeInformationUpdated(
         uri: Uri.parse('${Uri.base.origin}/'),
         replace: true,
       );
+    }
+    final shouldRestore = widget.autoRestoreSession ?? (widget.api == null);
+    if (shouldRestore && widget.initialSession == null) {
+      _restoring = true;
+      _tryRestoreSession();
+    } else {
+      _loadSavedTheme();
+    }
+  }
+
+  Future<void> _loadSavedTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final themeStr = prefs.getString('wn_theme');
+      if (themeStr != null && mounted) {
+        setState(() {
+          _themeMode = themeStr == 'dark' ? ThemeMode.dark : ThemeMode.light;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _tryRestoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final themeStr = prefs.getString('wn_theme');
+      if (themeStr != null && mounted) {
+        setState(() {
+          _themeMode = themeStr == 'dark' ? ThemeMode.dark : ThemeMode.light;
+        });
+      }
+      final session = await _api.restoreSession();
+      if (mounted) {
+        setState(() {
+          _session = session;
+          _restoring = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _restoring = false);
     }
   }
 
@@ -144,6 +198,25 @@ class _WorknestAppState extends State<WorknestApp> {
             animationDuration: const Duration(milliseconds: 180),
           ),
         ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF3F7F9),
+          labelStyle: const TextStyle(color: Color(0xFF4A6572)),
+          hintStyle: const TextStyle(color: Color(0xFF83939A)),
+          floatingLabelStyle: const TextStyle(color: Color(0xFF103A48)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF103A48), width: 1.5),
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
@@ -209,26 +282,72 @@ class _WorknestAppState extends State<WorknestApp> {
             animationDuration: const Duration(milliseconds: 180),
           ),
         ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF1E293B),
+          labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+          hintStyle: const TextStyle(color: Color(0xFF64748B)),
+          floatingLabelStyle: const TextStyle(color: Color(0xFF38BDF8)),
+          prefixIconColor: const Color(0xFF64748B),
+          suffixIconColor: const Color(0xFF64748B),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF334155)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF334155)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF38BDF8), width: 1.5),
+          ),
+        ),
       ),
-      home: _session != null
-          ? DashboardPage(
-              session: _session!,
-              api: _api,
-              onToggleTheme: _toggleTheme,
-              isDark: _themeMode == ThemeMode.dark,
-              onLogout: () async {
-                await _api.logout();
-                if (mounted) setState(() => _session = null);
-              },
+      home: _restoring
+          ? Scaffold(
+              backgroundColor: _themeMode == ThemeMode.dark
+                  ? const Color(0xFF0F172A)
+                  : const Color(0xFFF3F7F9),
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.hub_rounded,
+                      color: Color(0xFF59CDB6),
+                      size: 40,
+                    ),
+                    const SizedBox(height: 16),
+                    CircularProgressIndicator(
+                      color: _themeMode == ThemeMode.dark
+                          ? const Color(0xFF38BDF8)
+                          : const Color(0xFF103A48),
+                    ),
+                  ],
+                ),
+              ),
             )
-          : LoginPage(
-              api: _api,
-              initialReset: _pendingReset,
-              onAuthenticated: (session) => setState(() {
-                _session = session;
-                _pendingReset = null;
-              }),
-            ),
+          : _session != null
+              ? DashboardPage(
+                  session: _session!,
+                  api: _api,
+                  onToggleTheme: _toggleTheme,
+                  isDark: _themeMode == ThemeMode.dark,
+                  onLogout: () async {
+                    await _api.logout();
+                    if (mounted) setState(() => _session = null);
+                  },
+                )
+              : LoginPage(
+                  api: _api,
+                  initialReset: _pendingReset,
+                  onToggleTheme: _toggleTheme,
+                  onAuthenticated: (session) => setState(() {
+                    _session = session;
+                    _pendingReset = null;
+                  }),
+                ),
     );
   }
 }
@@ -239,11 +358,13 @@ class LoginPage extends StatefulWidget {
     required this.api,
     required this.onAuthenticated,
     this.initialReset,
+    this.onToggleTheme,
   });
 
   final HrmApiClient api;
   final ValueChanged<AuthSession> onAuthenticated;
   final PasswordResetLink? initialReset;
+  final VoidCallback? onToggleTheme;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -360,18 +481,34 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F7F9),
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF3F7F9),
       body: Stack(
         children: [
           const _AuthBackdrop(),
           SafeArea(
             child: Column(
               children: [
+                if (widget.onToggleTheme != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 24, 0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        icon: Icon(
+                          isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                        ),
+                        tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
+                        onPressed: widget.onToggleTheme,
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Center(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 14),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1040),
                         child: LayoutBuilder(
@@ -419,10 +556,13 @@ class _LoginPageState extends State<LoginPage> {
                                   );
                             return Card(
                               elevation: 0,
-                              color: Colors.white,
+                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
                               clipBehavior: Clip.antiAlias,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
+                                side: isDark
+                                    ? const BorderSide(color: Color(0xFF334155))
+                                    : BorderSide.none,
                               ),
                               child: content,
                             );
@@ -442,20 +582,21 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildForm({required bool compact}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (compact) ...[
-            const Row(
+            Row(
               children: [
-                Icon(Icons.hub_rounded, color: Color(0xFF59CDB6), size: 26),
-                SizedBox(width: 9),
+                const Icon(Icons.hub_rounded, color: Color(0xFF59CDB6), size: 26),
+                const SizedBox(width: 9),
                 Text(
                   'PeopleHub',
                   style: TextStyle(
-                    color: Color(0xFF103A48),
+                    color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
                     fontSize: 19,
                     fontWeight: FontWeight.w800,
                   ),
@@ -467,13 +608,13 @@ class _LoginPageState extends State<LoginPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF7F4),
+                color: isDark ? const Color(0xFF134E48) : const Color(0xFFEAF7F4),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text(
+              child: Text(
                 'SECURE SIGN IN',
                 style: TextStyle(
-                  color: Color(0xFF2A7C68),
+                  color: isDark ? const Color(0xFF59CDB6) : const Color(0xFF2A7C68),
                   fontSize: 9,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.1,
@@ -482,19 +623,22 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 16),
           ],
-          const Text(
+          Text(
             'Welcome back',
             style: TextStyle(
-              color: Color(0xFF103A48),
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
               fontSize: 26,
               fontWeight: FontWeight.w700,
               letterSpacing: -0.6,
             ),
           ),
           const SizedBox(height: 7),
-          const Text(
+          Text(
             'Sign in to your secure HR workspace.',
-            style: TextStyle(color: Color(0xFF83939A), fontSize: 12),
+            style: TextStyle(
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF83939A),
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 26),
           TextFormField(
@@ -502,10 +646,40 @@ class _LoginPageState extends State<LoginPage> {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.username, AutofillHints.email],
-            decoration: const InputDecoration(
+            style: TextStyle(
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            cursorColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+            decoration: InputDecoration(
               labelText: 'Work email',
               hintText: 'you@company.com',
-              prefixIcon: Icon(Icons.mail_outline_rounded),
+              prefixIcon: Icon(
+                Icons.mail_outline_rounded,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+              labelStyle: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF4A6572),
+              ),
+              hintStyle: TextStyle(
+                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+              ),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF3F7F9),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+                  width: 1.5,
+                ),
+              ),
             ),
             onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
             validator: (value) {
@@ -524,9 +698,24 @@ class _LoginPageState extends State<LoginPage> {
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.password],
+            style: TextStyle(
+              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            cursorColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
             decoration: InputDecoration(
               labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              labelStyle: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF4A6572),
+              ),
+              hintStyle: TextStyle(
+                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+              ),
+              prefixIcon: Icon(
+                Icons.lock_outline_rounded,
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
               suffixIcon: IconButton(
                 tooltip: _obscurePassword ? 'Show password' : 'Hide password',
                 onPressed: () =>
@@ -535,6 +724,22 @@ class _LoginPageState extends State<LoginPage> {
                   _obscurePassword
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF3F7F9),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF103A48),
+                  width: 1.5,
                 ),
               ),
             ),
@@ -550,7 +755,13 @@ class _LoginPageState extends State<LoginPage> {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: _isSubmitting ? null : _showForgotPassword,
-              child: const Text('Forgot password?'),
+              child: Text(
+                'Forgot password?',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF2F61D5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -568,7 +779,9 @@ class _LoginPageState extends State<LoginPage> {
             child: FilledButton(
               onPressed: _isSubmitting ? null : _signIn,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF103A48),
+                backgroundColor: isDark
+                    ? const Color(0xFF0284C7)
+                    : const Color(0xFF103A48),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(9),
@@ -595,24 +808,26 @@ class _LoginPageState extends State<LoginPage> {
           Container(
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
-              color: const Color(0xFFF5F9FA),
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF5F9FA),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE4ECEE)),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE4ECEE),
+              ),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.verified_user_outlined,
                   size: 15,
                   color: Color(0xFF2A9A75),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Protected by role-based access. Your session is kept in memory and cleared on logout.',
+                    'Protected by role-based access. Your session is securely preserved and cleared on logout.',
                     style: TextStyle(
                       fontSize: 10,
-                      color: Color(0xFF7A8C92),
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF7A8C92),
                       height: 1.4,
                     ),
                   ),
@@ -621,20 +836,23 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
           const SizedBox(height: 12),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 Icons.support_agent_rounded,
                 size: 13,
-                color: Color(0xFF9AA9AE),
+                color: isDark ? const Color(0xFF64748B) : const Color(0xFF9AA9AE),
               ),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'No account yet? Ask your HR administrator for an invite.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 9.5, color: Color(0xFF9AA9AE)),
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF9AA9AE),
+                  ),
                 ),
               ),
             ],
@@ -650,6 +868,7 @@ class _LoginFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 4, 28, 18),
       child: ConstrainedBox(
@@ -659,25 +878,28 @@ class _LoginFooter extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           spacing: 18,
           runSpacing: 10,
-          children: const [
+          children: [
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.hub_rounded, size: 15, color: Color(0xFF7FA9A2)),
-                SizedBox(width: 6),
+                const Icon(Icons.hub_rounded, size: 15, color: Color(0xFF7FA9A2)),
+                const SizedBox(width: 6),
                 Text(
                   'PeopleHub',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF44605F),
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF44605F),
                     letterSpacing: -0.1,
                   ),
                 ),
-                SizedBox(width: 9),
+                const SizedBox(width: 9),
                 Text(
                   '© 2026 · All rights reserved',
-                  style: TextStyle(fontSize: 9.5, color: Color(0xFF9AA9AE)),
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF9AA9AE),
+                  ),
                 ),
               ],
             ),
@@ -689,12 +911,18 @@ class _LoginFooter extends StatelessWidget {
                 _FooterTag(
                   icon: Icons.lock_outline_rounded,
                   label: 'Encrypted session',
+                  isDark: isDark,
                 ),
                 _FooterTag(
                   icon: Icons.shield_outlined,
                   label: 'Role-based access',
+                  isDark: isDark,
                 ),
-                _FooterTag(icon: Icons.bolt_rounded, label: 'Built for teams'),
+                _FooterTag(
+                  icon: Icons.bolt_rounded,
+                  label: 'Built for teams',
+                  isDark: isDark,
+                ),
               ],
             ),
           ],
@@ -705,31 +933,42 @@ class _LoginFooter extends StatelessWidget {
 }
 
 class _FooterTag extends StatelessWidget {
-  const _FooterTag({required this.icon, required this.label});
+  const _FooterTag({
+    required this.icon,
+    required this.label,
+    this.isDark = false,
+  });
 
   final IconData icon;
   final String label;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white.withAlpha(170),
+        color: isDark ? const Color(0xFF1E293B) : Colors.white.withAlpha(170),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDFEAEC)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFDFEAEC),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: const Color(0xFF5E8B85)),
+          Icon(
+            icon,
+            size: 11,
+            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF5E8B85),
+          ),
           const SizedBox(width: 5),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF6E8388),
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6E8388),
             ),
           ),
         ],
@@ -743,13 +982,24 @@ class _AuthBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Positioned.fill(
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFEDF6F6), Color(0xFFF4F8FA), Color(0xFFE8F1F6)],
+            colors: isDark
+                ? const [
+                    Color(0xFF0B132B),
+                    Color(0xFF0F172A),
+                    Color(0xFF131D33),
+                  ]
+                : const [
+                    Color(0xFFEDF6F6),
+                    Color(0xFFF4F8FA),
+                    Color(0xFFE8F1F6),
+                  ],
           ),
         ),
         child: Stack(
@@ -757,22 +1007,22 @@ class _AuthBackdrop extends StatelessWidget {
             Positioned(
               top: -120,
               left: -90,
-              child: _softCircle(340, const Color(0x3359CDB6)),
+              child: _softCircle(340, isDark ? const Color(0x1F38BDF8) : const Color(0x3359CDB6)),
             ),
             Positioned(
               bottom: -150,
               right: -80,
-              child: _softCircle(420, const Color(0x223568D5)),
+              child: _softCircle(420, isDark ? const Color(0x1A6366F1) : const Color(0x223568D5)),
             ),
             Positioned(
               top: 80,
               right: 120,
-              child: _softCircle(120, const Color(0x1F93E8D8)),
+              child: _softCircle(120, isDark ? const Color(0x1438BDF8) : const Color(0x1F93E8D8)),
             ),
             Positioned(
               left: -60,
               bottom: 110,
-              child: _softCircle(210, const Color(0x1F59CDB6)),
+              child: _softCircle(210, isDark ? const Color(0x1A2DD4BF) : const Color(0x1F59CDB6)),
             ),
             const Positioned(
               top: 54,
@@ -811,7 +1061,7 @@ class _AuthBackdrop extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0x1F2A7C68),
+                    color: isDark ? const Color(0x1F38BDF8) : const Color(0x1F2A7C68),
                     width: 1.5,
                   ),
                 ),
@@ -826,7 +1076,7 @@ class _AuthBackdrop extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0x1A3568D5),
+                    color: isDark ? const Color(0x1A6366F1) : const Color(0x1A3568D5),
                     width: 1.5,
                   ),
                 ),
@@ -860,20 +1110,25 @@ class _FloatingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Transform.rotate(
       angle: angle,
       child: Container(
         width: 62,
         height: 62,
         decoration: BoxDecoration(
-          color: Colors.white.withAlpha(205),
+          color: isDark
+              ? const Color(0xFF1E293B).withAlpha(220)
+              : Colors.white.withAlpha(205),
           borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: const Color(0xFFE3EDEE)),
-          boxShadow: const [
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE3EDEE),
+          ),
+          boxShadow: [
             BoxShadow(
-              color: Color(0x14103A48),
+              color: isDark ? const Color(0x33000000) : const Color(0x14103A48),
               blurRadius: 18,
-              offset: Offset(0, 7),
+              offset: const Offset(0, 7),
             ),
           ],
         ),
@@ -1282,8 +1537,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AlertDialog(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
@@ -1299,8 +1555,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           Expanded(
             child: Text(
               _resetStep ? 'Set a new password' : 'Reset your password',
-              style: const TextStyle(
-                color: Color(0xFF103A48),
+              style: TextStyle(
+                color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.2,

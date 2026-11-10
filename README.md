@@ -4,7 +4,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.47.9-02569B?style=for-the-badge&logo=flutter)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.13.7-0175C2?style=for-the-badge&logo=dart)](https://dart.dev)
 [![Backend Status](https://img.shields.io/badge/Backend-Render%20ASP.NET-103A48?style=for-the-badge)](https://hrm-api-tjfa.onrender.com/health)
-[![Tests Passing](https://img.shields.io/badge/Tests-14%2F14%20Passing-success?style=for-the-badge)](https://github.com/ProdiptoPantho/figma_worknest)
+[![Tests Passing](https://img.shields.io/badge/Tests-16%2F16%20Passing-success?style=for-the-badge)](https://github.com/ProdiptoPantho/figma_worknest)
 
 A responsive, production-ready **Human Resource Management (HRM) and Employee Operations Web Application** built with Flutter. Designed with a calm corporate aesthetic (Navy `#103A48`, Teal `#59CDB6`, and Mint `#2A9A75`), PeopleHub connects directly to a live RESTful API backend to handle attendance, leave management, employee task tracking, and role-based workforce governance.
 
@@ -123,7 +123,7 @@ Run the automated test suite:
 ```bash
 flutter test
 ```
-*Current test suite: **14/14 tests passing**.*
+*Current test suite: **16/16 tests passing**.*
 
 ---
 

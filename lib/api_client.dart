@@ -1,7 +1,8 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message, this.statusCode);
@@ -853,6 +854,13 @@ class HrmApiClient {
     }
 
     final profile = await _getMe();
+    // Persist tokens for session restoration
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wn_accessToken', _accessToken!);
+    await prefs.setString('wn_refreshToken', _refreshToken!);
+    await prefs.setString('wn_email', data['email'] as String? ?? email.trim());
+    await prefs.setStringList('wn_roles', profile.roles);
+    await prefs.setStringList('wn_permissions', profile.permissions);
     return AuthSession(
       accessToken: _accessToken!,
       refreshToken: _refreshToken!,
@@ -863,9 +871,14 @@ class HrmApiClient {
   }
 
   Future<_Profile> _getMe() async {
-    final response = await _client
-        .get(Uri.parse('$baseUrl/api/auth/me'), headers: _jsonHeaders)
+    var response = await _client
+        .get(Uri.parse('/api/auth/me'), headers: _jsonHeaders)
         .timeout(const Duration(seconds: 45));
+    if (response.statusCode == 401 && await _refreshAccessToken()) {
+      response = await _client
+          .get(Uri.parse('/api/auth/me'), headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 45));
+    }
     if (response.statusCode != 200) {
       throw ApiException(
         'Unable to load your account permissions.',
@@ -884,7 +897,7 @@ class HrmApiClient {
     try {
       if (token != null && _accessToken != null) {
         await _client.post(
-          Uri.parse('$baseUrl/api/auth/logout'),
+          Uri.parse('/api/auth/logout'),
           headers: _jsonHeaders,
           body: jsonEncode({'refreshToken': token}),
         );
@@ -892,9 +905,70 @@ class HrmApiClient {
     } finally {
       _accessToken = null;
       _refreshToken = null;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('wn_accessToken');
+        await prefs.remove('wn_refreshToken');
+        await prefs.remove('wn_email');
+        await prefs.remove('wn_roles');
+        await prefs.remove('wn_permissions');
+      } catch (_) {}
     }
   }
 
+  /// Restores a previously persisted session from local storage.
+  /// Returns the restored [AuthSession] if tokens were found and valid,
+  /// or `null` if no session exists or the token is no longer accepted.
+  Future<AuthSession?> restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('wn_accessToken');
+      final refreshToken = prefs.getString('wn_refreshToken');
+      final savedEmail = prefs.getString('wn_email');
+      final savedRoles = prefs.getStringList('wn_roles') ?? const [];
+      final savedPermissions = prefs.getStringList('wn_permissions') ?? const [];
+      if (accessToken == null || refreshToken == null) return null;
+      _accessToken = accessToken;
+      _refreshToken = refreshToken;
+
+      // Validate by fetching current user profile
+      try {
+        final profile = await _getMe().timeout(const Duration(seconds: 10));
+        await prefs.setStringList('wn_roles', profile.roles);
+        await prefs.setStringList('wn_permissions', profile.permissions);
+        return AuthSession(
+          accessToken: _accessToken!,
+          refreshToken: _refreshToken!,
+          email: savedEmail ?? '',
+          roles: profile.roles,
+          permissions: profile.permissions,
+        );
+      } catch (e) {
+        if (e is ApiException && e.statusCode == 401) {
+          _accessToken = null;
+          _refreshToken = null;
+          await prefs.remove('wn_accessToken');
+          await prefs.remove('wn_refreshToken');
+          await prefs.remove('wn_email');
+          await prefs.remove('wn_roles');
+          await prefs.remove('wn_permissions');
+          return null;
+        }
+        if (savedEmail != null && savedEmail.isNotEmpty) {
+          return AuthSession(
+            accessToken: _accessToken!,
+            refreshToken: _refreshToken!,
+            email: savedEmail,
+            roles: savedRoles,
+            permissions: savedPermissions,
+          );
+        }
+        return null;
+      }
+    } catch (_) {
+      return null;
+    }
+  }
   /// Asks the API to start a password reset for [email].
   ///
   /// The current HR API accepts this request but does not send email yet, so
@@ -1493,6 +1567,10 @@ class HrmApiClient {
     if (accessToken == null || refreshToken == null) return false;
     _accessToken = accessToken;
     _refreshToken = refreshToken;
+    // Keep persisted tokens in sync
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wn_accessToken', accessToken);
+    await prefs.setString('wn_refreshToken', refreshToken);
     return true;
   }
 
