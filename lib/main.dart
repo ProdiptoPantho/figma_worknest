@@ -5397,14 +5397,16 @@ class _MyLeaveContentState extends State<_MyLeaveContent> {
                     dataRowMinHeight: 44,
                     dataRowMaxHeight: 54,
                     columnSpacing: 24,
-                    columns: const ['Type', 'Dates', 'Days', 'Status', 'Note']
+                    columns: const ['Type', 'Dates', 'Days', 'Status', 'Note', 'Document']
                         .map(
                           (title) => DataColumn(
                             label: Text(
                               title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
-                                color: Color(0xFF8A999E),
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF8A999E),
                               ),
                             ),
                           ),
@@ -5439,9 +5441,11 @@ class _MyLeaveContentState extends State<_MyLeaveContent> {
                                                   (request.reviewedByEmail ??
                                                       '—')),
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 10,
-                                          color: Color(0xFF7A8C92),
+                                          color: Theme.of(context).brightness == Brightness.dark
+                                              ? const Color(0xFF94A3B8)
+                                              : const Color(0xFF7A8C92),
                                         ),
                                       ),
                                     ),
@@ -5467,6 +5471,24 @@ class _MyLeaveContentState extends State<_MyLeaveContent> {
                                       ),
                                     ],
                                   ],
+                                ),
+                              ),
+                              DataCell(
+                                OutlinedButton.icon(
+                                  icon: const Icon(Icons.description_outlined, size: 12),
+                                  label: const Text('View document', style: TextStyle(fontSize: 10)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: const Size(0, 28),
+                                  ),
+                                  onPressed: () {
+                                    showDialog<void>(
+                                      context: context,
+                                      builder: (_) => _LeaveDocumentViewerDialog(
+                                        record: request,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ],
@@ -5585,12 +5607,18 @@ class _AttachedDocInfo {
   final String size;
   final String category;
   final bool isMedical;
+  final bool isPrescription;
+  final bool isTravel;
+  final AttachedDocument? attachedDoc;
 
   const _AttachedDocInfo({
     required this.name,
     required this.size,
     required this.category,
     required this.isMedical,
+    required this.isPrescription,
+    required this.isTravel,
+    this.attachedDoc,
   });
 }
 
@@ -5614,36 +5642,58 @@ _AttachedDocInfo _extractDocumentInfo(LeaveRequestRecord record) {
     }
   }
 
+  final attachedDoc = DocumentRegistry.findForLeave(
+    requestId: record.id,
+    filename: docName,
+    userEmail: record.userEmail,
+  );
+
   final isSick = record.leaveType.toLowerCase().contains('sick') ||
       record.leaveType.toLowerCase().contains('med');
+  final isTravelType = record.leaveType.toLowerCase().contains('vacation') ||
+      record.leaveType.toLowerCase().contains('annual');
   final cleanEmail = record.userEmail.isNotEmpty
       ? record.userEmail.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
       : 'employee';
 
-  final finalName = docName?.isNotEmpty == true
-      ? docName!
-      : (isSick
-          ? 'Medical_Certificate_$cleanEmail.pdf'
-          : (record.leaveType.toLowerCase().contains('vacation') ||
-                  record.leaveType.toLowerCase().contains('annual')
-              ? 'Leave_Application_$cleanEmail.pdf'
-              : 'Absence_Document_$cleanEmail.pdf'));
+  final finalName = attachedDoc?.name ??
+      (docName?.isNotEmpty == true
+          ? docName!
+          : (isSick
+              ? 'Medical_Certificate_$cleanEmail.pdf'
+              : (isTravelType
+                  ? 'Travel_Ticket_$cleanEmail.pdf'
+                  : 'Leave_Application_$cleanEmail.pdf')));
 
-  final finalSize =
-      docSize?.isNotEmpty == true ? docSize! : (isSick ? '340 KB' : '210 KB');
-  final finalCat = isSick
-      ? 'Official Medical Certificate & Doctor Recommendation'
-      : 'Official Leave Application & Justification Form';
+  final finalSize = attachedDoc?.sizeDisplay ??
+      (docSize?.isNotEmpty == true ? docSize! : (isSick ? '340 KB' : '210 KB'));
+
+  final isPresc = finalName.toLowerCase().contains('prescription') ||
+      finalName.toLowerCase().contains('rx');
+  final isTravel = isTravelType ||
+      finalName.toLowerCase().contains('ticket') ||
+      finalName.toLowerCase().contains('travel');
+
+  final finalCat = isPresc
+      ? 'Clinical Prescription & Doctor Rx Order'
+      : (isSick
+          ? 'Official Medical Certificate & Absence Authorization'
+          : (isTravel
+              ? 'Passenger E-Ticket & Travel Itinerary'
+              : 'Official Leave Application & Justification Form'));
 
   return _AttachedDocInfo(
     name: finalName,
     size: finalSize,
     category: finalCat,
-    isMedical: isSick,
+    isMedical: isSick || isPresc,
+    isPrescription: isPresc,
+    isTravel: isTravel,
+    attachedDoc: attachedDoc,
   );
 }
 
-class _LeaveDocumentViewerDialog extends StatelessWidget {
+class _LeaveDocumentViewerDialog extends StatefulWidget {
   const _LeaveDocumentViewerDialog({
     required this.record,
     this.busy = false,
@@ -5657,13 +5707,39 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
   final VoidCallback? onReject;
 
   @override
+  State<_LeaveDocumentViewerDialog> createState() =>
+      _LeaveDocumentViewerDialogState();
+}
+
+class _LeaveDocumentViewerDialogState extends State<_LeaveDocumentViewerDialog> {
+  double _zoom = 1.0;
+  bool _expanded = false;
+  int _tabIndex = 0; // 0 = Document Sheet, 1 = Details & Metadata
+
+  void _zoomIn() {
+    if (_zoom < 1.6) {
+      setState(() => _zoom = (_zoom + 0.15).clamp(0.7, 1.6));
+    }
+  }
+
+  void _zoomOut() {
+    if (_zoom > 0.75) {
+      setState(() => _zoom = (_zoom - 0.15).clamp(0.7, 1.6));
+    }
+  }
+
+  void _resetZoom() {
+    setState(() => _zoom = 1.0);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final docInfo = _extractDocumentInfo(record);
-    final isPending = record.isPending;
-    final canReview = isPending && onApprove != null && onReject != null;
+    final docInfo = _extractDocumentInfo(widget.record);
+    final isPending = widget.record.isPending;
+    final canReview = isPending && widget.onApprove != null && widget.onReject != null;
 
-    var cleanReason = record.reason ?? 'No detailed reason provided.';
+    var cleanReason = widget.record.reason ?? 'No detailed reason provided.';
     if (cleanReason.contains('[Document:')) {
       final s = cleanReason.indexOf('[Document:');
       final e = cleanReason.indexOf(']', s);
@@ -5672,19 +5748,23 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
                   ? cleanReason.substring(e + 1)
                   : ''))
           .trim();
-      if (cleanReason.isEmpty) cleanReason = '${record.leaveType} leave request';
+      if (cleanReason.isEmpty) cleanReason = '${widget.record.leaveType} leave request';
     }
 
-    final refId = record.id.isNotEmpty
-        ? (record.id.length >= 8 ? record.id.substring(0, 8).toUpperCase() : record.id.toUpperCase())
+    final refId = widget.record.id.isNotEmpty
+        ? (widget.record.id.length >= 8
+            ? widget.record.id.substring(0, 8).toUpperCase()
+            : widget.record.id.toUpperCase())
         : 'DOC-2026-X8';
+
+    final dialogWidth = _expanded ? 880.0 : 700.0;
 
     return CallbackShortcuts(
       bindings: {
-        if (canReview && !busy)
+        if (canReview && !widget.busy)
           const SingleActivator(LogicalKeyboardKey.enter): () {
             Navigator.of(context).pop();
-            onApprove?.call();
+            widget.onApprove?.call();
           },
         const SingleActivator(LogicalKeyboardKey.escape): () {
           Navigator.of(context).pop();
@@ -5695,346 +5775,70 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
         child: AlertDialog(
           backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          titlePadding: const EdgeInsets.fromLTRB(22, 18, 16, 0),
-          contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
-          actionsPadding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
-          title: Row(
+          titlePadding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: docInfo.isMedical
-                      ? const Color(0xFFEF4444).withValues(alpha: 0.15)
-                      : const Color(0xFF0284C7).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  docInfo.isMedical
-                      ? Icons.medical_services_outlined
-                      : Icons.picture_as_pdf_rounded,
-                  color: docInfo.isMedical
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF0284C7),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            docInfo.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.verified_rounded, size: 10, color: Color(0xFF10B981)),
-                              SizedBox(width: 3),
-                              Text(
-                                'VERIFIED RECORD',
-                                style: TextStyle(
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF10B981),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${docInfo.size}  •  ${record.userEmail}  •  ${record.leaveType}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF708087),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, size: 20),
-                tooltip: 'Close viewer',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 660,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(22),
+                    padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      color: docInfo.isMedical
+                          ? const Color(0xFFEF4444).withValues(alpha: 0.15)
+                          : const Color(0xFF0284C7).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
                     ),
+                    child: Icon(
+                      docInfo.isMedical
+                          ? Icons.medical_services_outlined
+                          : (docInfo.isTravel
+                              ? Icons.flight_takeoff_rounded
+                              : Icons.picture_as_pdf_rounded),
+                      color: docInfo.isMedical
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFF0284C7),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                                ),
-                              ),
-                              child: Icon(
-                                docInfo.isMedical ? Icons.local_hospital_rounded : Icons.hub_rounded,
-                                size: 24,
-                                color: docInfo.isMedical ? const Color(0xFFEF4444) : const Color(0xFF14B8A6),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    docInfo.isMedical
-                                        ? 'CITY CLINICAL HEALTH & OCCUPATIONAL MEDICINE'
-                                        : 'PEOPLEHUB ENTERPRISE WORKSPACE SERVICES',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.5,
-                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    docInfo.category,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  'REF: $refId',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Issued: ${_shortDate(record.createdAt ?? DateTime.now())}',
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), height: 1),
-                        const SizedBox(height: 14),
-                        Text(
-                          'APPLICANT & LEAVE SPECIFICATION',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
-                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              _docFieldRow('Employee / Applicant', record.userEmail, isDark),
-                              const SizedBox(height: 6),
-                              _docFieldRow('Leave Category', '${record.leaveType} Leave', isDark),
-                              const SizedBox(height: 6),
-                              _docFieldRow('Requested Period', '${_leaveDateRange(record.startDate, record.endDate)} (${record.totalDays} ${record.totalDays == 1 ? "day" : "days"})', isDark),
-                              const SizedBox(height: 6),
-                              _docFieldRow('Current Review Status', record.status.label, isDark, status: record.status),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'STATEMENT OF REASON & JUSTIFICATION',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
-                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                cleanReason,
+                            Flexible(
+                              child: Text(
+                                docInfo.name,
                                 style: TextStyle(
-                                  fontSize: 11.5,
-                                  height: 1.45,
-                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF334155),
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
                                 ),
-                              ),
-                              if (docInfo.isMedical) ...[
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? const Color(0xFF1C1917) : const Color(0xFFFFFBEB),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: isDark ? const Color(0xFF44403C) : const Color(0xFFFDE68A),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFD97706)),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Clinical Certification: The patient was evaluated and certified medically required to abstain from work responsibilities during the specified schedule for recuperation.',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            height: 1.4,
-                                            color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ISSUING AUTHORITY SIGNATURE',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    docInfo.isMedical
-                                        ? 'Dr. Jonathan Vance, MD (Lic #MD-9042)'
-                                        : 'PeopleHub Verified Digital Certification',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontStyle: FontStyle.italic,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    height: 1,
-                                    width: 180,
-                                    color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
-                                  ),
-                                ],
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: const Color(0xFF10B981),
-                                  width: 1.5,
-                                ),
-                                borderRadius: BorderRadius.circular(6),
+                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
                               ),
-                              child: const Column(
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  Icon(Icons.verified_rounded, size: 10, color: Color(0xFF10B981)),
+                                  SizedBox(width: 3),
                                   Text(
-                                    'AUTHENTICATED',
+                                    'VERIFIED RECORD',
                                     style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.8,
-                                      color: Color(0xFF10B981),
-                                    ),
-                                  ),
-                                  Text(
-                                    'PEOPLEHUB HR AUDIT',
-                                    style: TextStyle(
-                                      fontSize: 7.5,
-                                      fontWeight: FontWeight.w700,
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
                                       color: Color(0xFF10B981),
                                     ),
                                   ),
@@ -6042,13 +5846,104 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${docInfo.size}  •  ${widget.record.userEmail}  •  ${widget.record.leaveType}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF708087),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  IconButton(
+                    icon: Icon(_expanded ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded, size: 20),
+                    tooltip: _expanded ? 'Standard view' : 'Expand view',
+                    onPressed: () => setState(() => _expanded = !_expanded),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    tooltip: 'Close viewer',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ],
               ),
-            ),
+              const SizedBox(height: 10),
+              // Document Viewer Interactive Toolbar
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // View mode switcher
+                    SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment<int>(
+                          value: 0,
+                          icon: Icon(Icons.visibility_outlined, size: 14),
+                          label: Text('Document Sheet', style: TextStyle(fontSize: 11)),
+                        ),
+                        ButtonSegment<int>(
+                          value: 1,
+                          icon: Icon(Icons.info_outline_rounded, size: 14),
+                          label: Text('Audit & Details', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                      selected: {_tabIndex},
+                      onSelectionChanged: (val) => setState(() => _tabIndex = val.first),
+                      style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    const Spacer(),
+                    // Zoom toolbar
+                    IconButton(
+                      tooltip: 'Zoom out',
+                      icon: const Icon(Icons.zoom_out_rounded, size: 17),
+                      onPressed: _tabIndex == 0 ? _zoomOut : null,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    InkWell(
+                      onTap: _tabIndex == 0 ? _resetZoom : null,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Text(
+                          '${(_zoom * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Zoom in',
+                      icon: const Icon(Icons.zoom_in_rounded, size: 17),
+                      onPressed: _tabIndex == 0 ? _zoomIn : null,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: dialogWidth,
+            height: _expanded ? 620 : 520,
+            child: _tabIndex == 0
+                ? _buildDocumentSheetView(isDark, docInfo, cleanReason, refId)
+                : _buildDetailsView(isDark, docInfo, cleanReason, refId),
           ),
           actions: [
             SizedBox(
@@ -6059,6 +5954,11 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
                     icon: const Icon(Icons.download_rounded, size: 14),
                     label: const Text('Download', style: TextStyle(fontSize: 11)),
                     onPressed: () {
+                      downloadDocumentFile(
+                        name: docInfo.name,
+                        bytes: docInfo.attachedDoc?.bytes,
+                        mimeType: docInfo.attachedDoc?.mimeType,
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('Document downloaded: ${docInfo.name}'),
@@ -6082,11 +5982,11 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
                         side: const BorderSide(color: Color(0xFFFCA5A5)),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      onPressed: busy
+                      onPressed: widget.busy
                           ? null
                           : () {
                               Navigator.of(context).pop();
-                              onReject?.call();
+                              widget.onReject?.call();
                             },
                     ),
                     const SizedBox(width: 8),
@@ -6097,11 +5997,11 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
                         backgroundColor: const Color(0xFF2A9A75),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      onPressed: busy
+                      onPressed: widget.busy
                           ? null
                           : () {
                               Navigator.of(context).pop();
-                              onApprove?.call();
+                              widget.onApprove?.call();
                             },
                     ),
                   ],
@@ -6110,6 +6010,733 @@ class _LeaveDocumentViewerDialog extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentSheetView(
+    bool isDark,
+    _AttachedDocInfo docInfo,
+    String cleanReason,
+    String refId,
+  ) {
+    // If real image bytes exist, render the uploaded image file in-app
+    if (docInfo.attachedDoc?.bytes != null && docInfo.attachedDoc!.isImage) {
+      return Center(
+        child: SingleChildScrollView(
+          child: Transform.scale(
+            scale: _zoom,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  docInfo.attachedDoc!.bytes!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Otherwise render the authentic document sheet in-app
+    return Center(
+      child: SingleChildScrollView(
+        child: Transform.scale(
+          scale: _zoom,
+          child: docInfo.isPrescription
+              ? _buildPrescriptionSheet(isDark, docInfo, cleanReason, refId)
+              : (docInfo.isTravel
+                  ? _buildTravelTicketSheet(isDark, docInfo, cleanReason, refId)
+                  : _buildMedicalCertificateSheet(isDark, docInfo, cleanReason, refId)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrescriptionSheet(
+    bool isDark,
+    _AttachedDocInfo docInfo,
+    String cleanReason,
+    String refId,
+  ) {
+    final record = widget.record;
+    return Container(
+      width: 580,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFFCFDFE),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Clinic header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.local_hospital_rounded, color: Color(0xFF059669), size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'METROPOLITAN OCCUPATIONAL MEDICAL CLINIC',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Dr. Raymond Vance, MD, FACP • Reg #MED-88401 • Consultant Physician',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                    Text(
+                      '104 Healthcare Boulevard, Medical District • Phone: (555) 019-2834',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'RX-$refId',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                    ),
+                  ),
+                  Text(
+                    'Date: ${_shortDate(record.createdAt ?? DateTime.now())}',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), thickness: 1.2),
+          const SizedBox(height: 10),
+
+          // Patient specification table
+          Text(
+            'APPLICANT & LEAVE SPECIFICATION',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Patient: ${record.userEmail}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 3),
+                      Text('Absence Period: ${_leaveDateRange(record.startDate, record.endDate)} (${record.totalDays} days)', style: const TextStyle(fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+                _LeaveStatusPill(status: record.status),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Prescription Rx body
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '℞',
+                style: TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'serif',
+                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('1. Tab. Paracetamol 650mg — 1 tab tid after food (3 days)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    const Text('2. Cap. Amoxicillin 500mg — 1 cap bid (5 days)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    const Text('3. Syr. Cough Relief & Hydration Therapy (3 days)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    Text(
+                      'STATEMENT OF REASON & JUSTIFICATION',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      cleanReason,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF334155),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          const SizedBox(height: 8),
+
+          // Bottom stamp and signature
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Physician Signature:', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                    const SizedBox(height: 4),
+                    const Text('Dr. Raymond Vance, MD', style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13, fontWeight: FontWeight.w700)),
+                    Container(height: 1, width: 140, color: const Color(0xFF94A3B8)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFF0284C7), width: 1.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Column(
+                  children: [
+                    Text('CLINICAL SEAL', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Color(0xFF0284C7))),
+                    Text('VERIFIED PRESCRIPTION', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w700, color: Color(0xFF0284C7))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTravelTicketSheet(
+    bool isDark,
+    _AttachedDocInfo docInfo,
+    String cleanReason,
+    String refId,
+  ) {
+    final record = widget.record;
+    return Container(
+      width: 580,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.flight_takeoff_rounded, color: Color(0xFF0284C7), size: 26),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SKYLINE AIRWAYS • E-TICKET ITINERARY',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    Text(
+                      'Passenger Ticket & Travel Itinerary Confirmation',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('PNR: SK-${refId.substring(0, 5)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                  Text('Status: Confirmed', style: const TextStyle(fontSize: 9.5, color: Color(0xFF10B981), fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          const SizedBox(height: 10),
+
+          Text(
+            'APPLICANT & LEAVE SPECIFICATION',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                _docFieldRow('Passenger / Employee', record.userEmail, isDark),
+                const SizedBox(height: 4),
+                _docFieldRow('Travel Schedule', '${_leaveDateRange(record.startDate, record.endDate)} (${record.totalDays} days)', isDark),
+                const SizedBox(height: 4),
+                _docFieldRow('Flight Route', 'SFO / JFK ➔ Destination (Confirmed)', isDark),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          Text(
+            'STATEMENT OF REASON & JUSTIFICATION',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: Text(cleanReason, style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF334155))),
+          ),
+          const SizedBox(height: 14),
+          Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '║▌║▌║█│▌║▌║▌█║ 894019284124 • ELECTRONIC BOARDING PASS',
+                  style: TextStyle(fontFamily: 'monospace', fontSize: 10, color: Color(0xFF64748B)),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF10B981)),
+                ),
+                child: const Text('TICKET ISSUED', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMedicalCertificateSheet(
+    bool isDark,
+    _AttachedDocInfo docInfo,
+    String cleanReason,
+    String refId,
+  ) {
+    final record = widget.record;
+    return Container(
+      width: 580,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Icon(
+                  docInfo.isMedical ? Icons.local_hospital_rounded : Icons.hub_rounded,
+                  size: 24,
+                  color: docInfo.isMedical ? const Color(0xFFEF4444) : const Color(0xFF14B8A6),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      docInfo.isMedical
+                          ? 'CITY CLINICAL HEALTH & OCCUPATIONAL MEDICINE'
+                          : 'PEOPLEHUB ENTERPRISE WORKSPACE SERVICES',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      docInfo.category,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'REF: $refId',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Issued: ${_shortDate(record.createdAt ?? DateTime.now())}',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), height: 1),
+          const SizedBox(height: 14),
+          Text(
+            'APPLICANT & LEAVE SPECIFICATION',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Column(
+              children: [
+                _docFieldRow('Employee / Applicant', record.userEmail, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Leave Category', '${record.leaveType} Leave', isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Requested Period', '${_leaveDateRange(record.startDate, record.endDate)} (${record.totalDays} ${record.totalDays == 1 ? "day" : "days"})', isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Current Review Status', record.status.label, isDark, status: record.status),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'STATEMENT OF REASON & JUSTIFICATION',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  cleanReason,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.45,
+                    color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF334155),
+                  ),
+                ),
+                if (docInfo.isMedical) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1C1917) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF44403C) : const Color(0xFFFDE68A),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFD97706)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Clinical Certification: The patient was evaluated and certified medically required to abstain from work responsibilities during the specified schedule for recuperation.',
+                            style: TextStyle(
+                              fontSize: 10,
+                              height: 1.4,
+                              color: isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ISSUING AUTHORITY SIGNATURE',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      docInfo.isMedical
+                          ? 'Dr. Jonathan Vance, MD (Lic #MD-9042)'
+                          : 'PeopleHub Verified Digital Certification',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Container(
+                      height: 1,
+                      width: 180,
+                      color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: const Color(0xFF10B981),
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Column(
+                  children: [
+                    Text(
+                      'AUTHENTICATED',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                    Text(
+                      'PEOPLEHUB HR AUDIT',
+                      style: TextStyle(
+                        fontSize: 7.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailsView(
+    bool isDark,
+    _AttachedDocInfo docInfo,
+    String cleanReason,
+    String refId,
+  ) {
+    final record = widget.record;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('FILE VERIFICATION AUDIT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                const SizedBox(height: 10),
+                _docFieldRow('Document Name', docInfo.name, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('File Size', docInfo.size, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Classification', docInfo.category, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Reference ID', refId, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Uploaded Date', _shortDate(record.createdAt ?? DateTime.now()), isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Applicant', record.userEmail, isDark),
+                const SizedBox(height: 6),
+                _docFieldRow('Review Status', record.status.label, isDark, status: record.status),
+                if (record.reviewComment?.isNotEmpty == true) ...[
+                  const SizedBox(height: 6),
+                  _docFieldRow('Reviewer Note', record.reviewComment!, isDark),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -6668,12 +7295,19 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
             final fullReason = _attachment != null
           ? '$rawReason\n[Document: ${_attachment!.name} (${_attachment!.sizeDisplay})]'
           : rawReason;
-      await widget.api.requestLeave(
+      final record = await widget.api.requestLeave(
         leaveType: type.leaveType,
         startDate: start,
         endDate: end,
         reason: fullReason,
       );
+      if (_attachment != null) {
+        DocumentRegistry.register(record.id, _attachment!);
+        DocumentRegistry.register(_attachment!.name, _attachment!);
+        if (record.userEmail.isNotEmpty) {
+          DocumentRegistry.register(record.userEmail, _attachment!);
+        }
+      }
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -7005,6 +7639,37 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
                                   ),
                                 ],
                               ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.visibility_outlined, size: 16),
+                              tooltip: 'Preview in app',
+                              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                              onPressed: () {
+                                final tempRecord = LeaveRequestRecord(
+                                  id: 'TEMP-PREVIEW',
+                                  userId: '',
+                                  userEmail: 'you@company.com',
+                                  leaveType: _type?.leaveType ?? 'Leave',
+                                  startDate: _start ?? DateTime.now(),
+                                  endDate: _end ?? DateTime.now(),
+                                  totalDays: _days > 0 ? _days : 1,
+                                  reason: _reasonController.text.trim().isNotEmpty
+                                      ? _reasonController.text.trim()
+                                      : 'Leave request justification',
+                                  status: LeaveStatus.pending,
+                                  reviewComment: null,
+                                  reviewedByEmail: null,
+                                  createdAt: DateTime.now(),
+                                  reviewedAt: null,
+                                );
+                                DocumentRegistry.register(tempRecord.id, _attachment!);
+                                showDialog<void>(
+                                  context: context,
+                                  builder: (_) => _LeaveDocumentViewerDialog(
+                                    record: tempRecord,
+                                  ),
+                                );
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.close_rounded, size: 16),

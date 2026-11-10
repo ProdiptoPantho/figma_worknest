@@ -534,6 +534,49 @@ void main() {
     final decor = container.decoration as BoxDecoration?;
     expect(decor?.color, const Color(0xFF132A26));
   });
+
+  testWidgets('employee can view provided document in app from my leave history', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('My leave').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('View document'), findsWidgets);
+
+    // Click View document on the employee's request
+    await tester.tap(find.text('View document').first);
+    await tester.pumpAndSettle();
+
+    // Verify in-app document viewer sheet and interactive toolbar
+    expect(find.text('Document Sheet'), findsOneWidget);
+    expect(find.text('Audit & Details'), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('VERIFIED RECORD'), findsOneWidget);
+    expect(find.text('APPLICANT & LEAVE SPECIFICATION'), findsOneWidget);
+    expect(find.text('STATEMENT OF REASON & JUSTIFICATION'), findsOneWidget);
+
+    // Switch to Audit & Details tab
+    await tester.tap(find.text('Audit & Details'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('FILE VERIFICATION AUDIT'), findsOneWidget);
+    expect(find.text('Document Name'), findsOneWidget);
+
+    // Close the viewer
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('FILE VERIFICATION AUDIT'), findsNothing);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
