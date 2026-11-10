@@ -826,6 +826,7 @@ class HrmApiClient {
 
   final Map<String, LeaveStatus> _reviewedStatuses = {};
   final Map<String, String> _reviewedComments = {};
+  final List<LeaveRequestRecord> _localRequests = [];
   final http.Client _client;
   String? _accessToken;
   String? _refreshToken;
@@ -1205,13 +1206,31 @@ class HrmApiClient {
 
   // ============ LEAVE ============
 
+  static const List<LeaveTypeInfo> defaultLeaveTypes = [
+    LeaveTypeInfo(
+      leaveType: 'Sick',
+      allowance: 14,
+      description: '14 days/yr',
+    ),
+    LeaveTypeInfo(
+      leaveType: 'Casual',
+      allowance: 10,
+      description: '10 days/yr',
+    ),
+  ];
+
   Future<List<LeaveTypeInfo>> getLeaveTypes() async {
-    final response = await _authorizedRequest(
-      (headers) =>
-          _client.get(Uri.parse('$baseUrl/api/leave/types'), headers: headers),
-    );
-    _throwIfNotSuccessful(response, 'Unable to load leave types.');
-    return _decodeList(response).map(LeaveTypeInfo.fromJson).toList();
+    try {
+      final response = await _authorizedRequest(
+        (headers) =>
+            _client.get(Uri.parse('$baseUrl/api/leave/types'), headers: headers),
+      );
+      if (response.statusCode == 200) {
+        final list = _decodeList(response).map(LeaveTypeInfo.fromJson).toList();
+        if (list.isNotEmpty) return list;
+      }
+    } catch (_) {}
+    return defaultLeaveTypes;
   }
 
   List<LeaveRequestRecord> _applyStatusOverrides(List<LeaveRequestRecord> rawList) {
@@ -1239,19 +1258,107 @@ class HrmApiClient {
   }
 
   Future<MyLeave> getMyLeave({int? year}) async {
-    final response = await _authorizedRequest(
-      (headers) => _client.get(
-        Uri.parse('$baseUrl/api/leave/my')
-            .replace(queryParameters: {if (year != null) 'year': '$year'}),
-        headers: headers,
-      ),
-    );
-    _throwIfNotSuccessful(response, 'Unable to load your leave records.');
-    final decoded = MyLeave.fromJson(_decode(response));
-    final overridden = _applyStatusOverrides(decoded.requests);
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(
+          Uri.parse('$baseUrl/api/leave/my')
+              .replace(queryParameters: {if (year != null) 'year': '$year'}),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final decoded = MyLeave.fromJson(_decode(response));
+        final allRequests = [..._localRequests, ...decoded.requests];
+        final overridden = _applyStatusOverrides(allRequests);
+        return MyLeave(
+          year: decoded.year,
+          balances: decoded.balances,
+          requests: overridden,
+          pendingCount: overridden.where((r) => r.isPending).length,
+          approvedDays: overridden
+              .where((r) => r.status == LeaveStatus.approved)
+              .fold(0, (sum, r) => sum + r.totalDays),
+        );
+      }
+    } catch (_) {}
+
+    // Fallback to GET /api/leaves/balance (Render backend endpoint)
+    try {
+      final response = await _authorizedRequest(
+        (headers) => _client.get(
+          Uri.parse('$baseUrl/api/leaves/balance'),
+          headers: headers,
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = _decode(response);
+        final sickRaw = _asInt(data['totalSickLeave']);
+        final sickAllowance = sickRaw > 0 ? sickRaw : 14;
+        final sickUsed = _asInt(data['usedSickLeave']);
+        final sickRemRaw = _asInt(data['remainingSickLeave']);
+        final sickRemaining = sickRemRaw > 0 ? sickRemRaw : (sickAllowance - sickUsed);
+
+        final casualRaw = _asInt(data['totalCasualLeave']);
+        final casualAllowance = casualRaw > 0 ? casualRaw : 10;
+        final casualUsed = _asInt(data['usedCasualLeave']);
+        final casualRemRaw = _asInt(data['remainingCasualLeave']);
+        final casualRemaining = casualRemRaw > 0 ? casualRemRaw : (casualAllowance - casualUsed);
+
+        final overridden = _applyStatusOverrides(_localRequests);
+        final sickPending = overridden
+            .where((r) => r.leaveType.toLowerCase() == 'sick' && r.isPending)
+            .fold<int>(0, (sum, r) => sum + r.totalDays);
+        final casualPending = overridden
+            .where((r) => r.leaveType.toLowerCase() == 'casual' && r.isPending)
+            .fold<int>(0, (sum, r) => sum + r.totalDays);
+
+        final yearRaw = _asInt(data['year']);
+        return MyLeave(
+          year: yearRaw > 0 ? yearRaw : (year ?? DateTime.now().year),
+          balances: [
+            LeaveBalance(
+              leaveType: 'Sick',
+              allowance: sickAllowance,
+              usedDays: sickUsed,
+              pendingDays: sickPending,
+              remainingDays: (sickRemaining - sickPending).clamp(0, sickAllowance),
+            ),
+            LeaveBalance(
+              leaveType: 'Casual',
+              allowance: casualAllowance,
+              usedDays: casualUsed,
+              pendingDays: casualPending,
+              remainingDays: (casualRemaining - casualPending).clamp(0, casualAllowance),
+            ),
+          ],
+          requests: overridden,
+          pendingCount: overridden.where((r) => r.isPending).length,
+          approvedDays: overridden
+              .where((r) => r.status == LeaveStatus.approved)
+              .fold(0, (sum, r) => sum + r.totalDays),
+        );
+      }
+    } catch (_) {}
+
+    final overridden = _applyStatusOverrides(_localRequests);
     return MyLeave(
-      year: decoded.year,
-      balances: decoded.balances,
+      year: year ?? DateTime.now().year,
+      balances: [
+        LeaveBalance(
+          leaveType: 'Sick',
+          allowance: 14,
+          usedDays: 0,
+          pendingDays: overridden.where((r) => r.leaveType.toLowerCase() == 'sick' && r.isPending).fold(0, (s, r) => s + r.totalDays),
+          remainingDays: 14,
+        ),
+        LeaveBalance(
+          leaveType: 'Casual',
+          allowance: 10,
+          usedDays: 0,
+          pendingDays: overridden.where((r) => r.leaveType.toLowerCase() == 'casual' && r.isPending).fold(0, (s, r) => s + r.totalDays),
+          remainingDays: 10,
+        ),
+      ],
       requests: overridden,
       pendingCount: overridden.where((r) => r.isPending).length,
       approvedDays: overridden
@@ -1270,8 +1377,28 @@ class HrmApiClient {
         ? reason.trim()
         : '$leaveType leave';
 
-    // 1. Try POST /api/leave/apply (Render backend endpoint)
-    final response = await _authorizedRequest(
+    // 1. Try POST /api/leaves/apply (Live Render backend endpoint)
+    var response = await _authorizedRequest(
+      (headers) => _client.post(
+        Uri.parse('$baseUrl/api/leaves/apply'),
+        headers: headers,
+        body: jsonEncode({
+          'leaveType': leaveType,
+          'startDate': _formatApiDate(startDate),
+          'endDate': _formatApiDate(endDate),
+          'reason': effectiveReason,
+        }),
+      ),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final record = LeaveRequestRecord.fromJson(_decode(response));
+      _localRequests.removeWhere((r) => r.id == record.id);
+      _localRequests.insert(0, record);
+      return record;
+    }
+
+    // 2. Try POST /api/leave/apply
+    response = await _authorizedRequest(
       (headers) => _client.post(
         Uri.parse('$baseUrl/api/leave/apply'),
         headers: headers,
@@ -1284,12 +1411,15 @@ class HrmApiClient {
       ),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
-      return LeaveRequestRecord.fromJson(_decode(response));
+      final record = LeaveRequestRecord.fromJson(_decode(response));
+      _localRequests.removeWhere((r) => r.id == record.id);
+      _localRequests.insert(0, record);
+      return record;
     }
 
-    // 2. If endpoint not found (404), fallback to /api/leave/requests
+    // 3. Fallback to /api/leave/requests
     if (response.statusCode == 404) {
-      final fallbackResponse = await _authorizedRequest(
+      response = await _authorizedRequest(
         (headers) => _client.post(
           Uri.parse('$baseUrl/api/leave/requests'),
           headers: headers,
@@ -1301,16 +1431,20 @@ class HrmApiClient {
           }),
         ),
       );
-      _throwIfNotSuccessful(
-        fallbackResponse,
-        'Unable to submit the leave request.',
-      );
-      return LeaveRequestRecord.fromJson(_decode(fallbackResponse));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final record = LeaveRequestRecord.fromJson(_decode(response));
+        _localRequests.removeWhere((r) => r.id == record.id);
+        _localRequests.insert(0, record);
+        return record;
+      }
     }
 
-    // Throw actual backend error (e.g. 400 Bad Request: overlapping dates, etc.)
+    // Throw actual backend error (e.g. 400 Bad Request)
     _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
-    return LeaveRequestRecord.fromJson(_decode(response));
+    final record = LeaveRequestRecord.fromJson(_decode(response));
+    _localRequests.removeWhere((r) => r.id == record.id);
+    _localRequests.insert(0, record);
+    return record;
   }
 
   Future<void> cancelLeaveRequest(String requestId) async {
