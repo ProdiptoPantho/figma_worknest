@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'dart:convert';
 
@@ -807,9 +808,21 @@ class TaskSummary {
 }
 
 class HrmApiClient {
-  HrmApiClient({http.Client? client}) : _client = client ?? http.Client();
+  HrmApiClient({http.Client? client, String? baseUrl})
+      : _client = client ?? http.Client(),
+        baseUrl = baseUrl ?? _defaultBaseUrl;
 
-  static const baseUrl = 'https://hrm-api-tjfa.onrender.com';
+  static String get _defaultBaseUrl {
+    if (kIsWeb) {
+      final origin = Uri.base.origin;
+      if (origin.isNotEmpty && !origin.startsWith('file://')) {
+        return origin;
+      }
+    }
+    return 'https://hrm-api-tjfa.onrender.com';
+  }
+
+  final String baseUrl;
 
   final Map<String, LeaveStatus> _reviewedStatuses = {};
   final Map<String, String> _reviewedComments = {};
