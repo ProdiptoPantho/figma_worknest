@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -8387,6 +8388,18 @@ class _EmployeeManagementContentState
     }
   }
 
+  Future<void> _openAddEmployee() async {
+    final created = await showDialog<ApiUser>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AddEmployeeDialog(api: widget.api),
+    );
+    if (created != null && mounted) {
+      widget.onAction('Employee "${created.email}" created successfully with role ${created.roles.join(", ")}.');
+      _load();
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -8437,9 +8450,10 @@ class _EmployeeManagementContentState
       title: 'Employee management',
       subtitle: 'Real workforce directory synced directly from your HR API.',
       action: FilledButton.icon(
-        onPressed: () => widget.onAction('Account invitations are managed via HR registration.'),
-        icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
-        label: const Text('Invite employee'),
+        key: const ValueKey('add_employee_button'),
+        onPressed: _openAddEmployee,
+        icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+        label: const Text('Add employee'),
       ),
       children: [
         _SummaryRow(
@@ -8716,6 +8730,18 @@ class _RoleManagementContentState extends State<_RoleManagementContent> {
     }
   }
 
+  Future<void> _openAddEmployee() async {
+    final created = await showDialog<ApiUser>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _AddEmployeeDialog(api: widget.api),
+    );
+    if (created != null && mounted) {
+      widget.onAction('Employee "${created.email}" created successfully with role ${created.roles.join(", ")}.');
+      _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _Workspace(
@@ -8723,11 +8749,10 @@ class _RoleManagementContentState extends State<_RoleManagementContent> {
       subtitle:
           'Assign access according to each person’s job responsibilities.',
       action: FilledButton.icon(
-        onPressed: () => widget.onAction(
-          'Account invitations are managed by the API registration flow.',
-        ),
-        icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
-        label: const Text('Invite employee'),
+        key: const ValueKey('role_add_employee_button'),
+        onPressed: _openAddEmployee,
+        icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+        label: const Text('Add employee'),
       ),
       children: [
         _Panel(
@@ -10456,5 +10481,388 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
       ],
     ),
   );
+  }
+}
+
+class _RoleOption {
+  const _RoleOption({
+    required this.name,
+    required this.label,
+    required this.description,
+    required this.icon,
+  });
+
+  final String name;
+  final String label;
+  final String description;
+  final IconData icon;
+}
+
+class _AddEmployeeDialog extends StatefulWidget {
+  const _AddEmployeeDialog({required this.api});
+
+  final HrmApiClient api;
+
+  @override
+  State<_AddEmployeeDialog> createState() => _AddEmployeeDialogState();
+}
+
+class _AddEmployeeDialogState extends State<_AddEmployeeDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _fullNameController = TextEditingController();
+
+  bool _obscurePassword = true;
+  bool _submitting = false;
+  String? _errorMessage;
+  String _selectedRole = 'user';
+
+  static const List<_RoleOption> _availableRoles = [
+    _RoleOption(
+      name: 'user',
+      label: 'Employee (Standard)',
+      description: 'Standard self-service employee with attendance clocking, leave requests, and task dashboard.',
+      icon: Icons.person_outline_rounded,
+    ),
+    _RoleOption(
+      name: 'project manager',
+      label: 'Project Manager',
+      description: 'Can manage, create, and assign tasks to employees across teams and track project progress.',
+      icon: Icons.assignment_ind_outlined,
+    ),
+    _RoleOption(
+      name: 'hr manager',
+      label: 'HR Manager',
+      description: 'Manages workforce records, reviews leave requests with document proof, and issues approvals.',
+      icon: Icons.badge_outlined,
+    ),
+    _RoleOption(
+      name: 'department manager',
+      label: 'Department Manager',
+      description: 'Oversees departmental staff, reviews team attendance, and approves departmental leave.',
+      icon: Icons.supervisor_account_outlined,
+    ),
+    _RoleOption(
+      name: 'payroll officer',
+      label: 'Payroll Officer',
+      description: 'Manages salary records, compensation structures, and generates payroll reports.',
+      icon: Icons.payments_outlined,
+    ),
+    _RoleOption(
+      name: 'super admin',
+      label: 'Super Admin',
+      description: 'Full administrative access across all system modules, RBAC roles, and security configuration.',
+      icon: Icons.admin_panel_settings_outlined,
+    ),
+  ];
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _fullNameController.dispose();
+    super.dispose();
+  }
+
+  void _generatePassword() {
+    final rand = math.Random();
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final buf = StringBuffer('Pass!');
+    for (var i = 0; i < 6; i++) {
+      buf.write(chars[rand.nextInt(chars.length)]);
+    }
+    buf.write(rand.nextInt(90) + 10);
+    setState(() {
+      _passwordController.text = buf.toString();
+      _obscurePassword = false;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final user = await widget.api.createEmployee(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        roleName: _selectedRole,
+        fullName: _fullNameController.text.trim().isEmpty
+            ? null
+            : _fullNameController.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(user);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message;
+        _submitting = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not create employee. Please try again.';
+        _submitting = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentRole = _availableRoles.firstWhere(
+      (r) => r.name == _selectedRole,
+      orElse: () => _availableRoles.first,
+    );
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): _submit,
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): _submit,
+      },
+      child: AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF103A48).withValues(alpha: isDark ? 0.35 : 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF2A9A75), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add employee',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF103A48),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Create an employee account and set their role permissions.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_errorMessage != null) ...[
+                    Container(
+                      key: const ValueKey('add_employee_error_banner'),
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFFEF4444),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  TextFormField(
+                    key: const ValueKey('add_employee_email_input'),
+                    controller: _emailController,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Work email address *',
+                      hintText: 'e.g. employee@company.com',
+                      prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
+                    ),
+                    validator: (v) {
+                      final val = v?.trim() ?? '';
+                      if (val.isEmpty) return 'Enter an email address';
+                      if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$').hasMatch(val)) {
+                        return 'Enter a valid email address';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    key: const ValueKey('add_employee_password_input'),
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Initial password *',
+                      hintText: 'Minimum 8 characters',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            key: const ValueKey('generate_employee_password_button'),
+                            tooltip: 'Generate secure password',
+                            icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                            onPressed: _generatePassword,
+                          ),
+                          IconButton(
+                            key: const ValueKey('toggle_employee_password_visibility'),
+                            tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              size: 18,
+                            ),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                      ),
+                    ),
+                    validator: (v) {
+                      final val = v?.trim() ?? '';
+                      if (val.isEmpty) return 'Enter a password';
+                      if (val.length < 8) return 'Password must be at least 8 characters';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    key: const ValueKey('add_employee_fullname_input'),
+                    controller: _fullNameController,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Full name (optional)',
+                      hintText: 'e.g. Sarah Connor',
+                      prefixIcon: Icon(Icons.badge_outlined, size: 20),
+                    ),
+                    onFieldSubmitted: (_) => _submit(),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Assignable Role *',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    key: const ValueKey('add_employee_role_dropdown'),
+                    initialValue: _selectedRole,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.security_rounded, size: 20),
+                    ),
+                    items: _availableRoles.map((role) {
+                      return DropdownMenuItem<String>(
+                        value: role.name,
+                        child: Row(
+                          children: [
+                            Icon(role.icon, size: 18, color: const Color(0xFF2A9A75)),
+                            const SizedBox(width: 8),
+                            Text(role.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedRole = val);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 16, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            currentRole.description,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('submit_add_employee_button'),
+            onPressed: _submitting ? null : _submit,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF103A48),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            ),
+            child: _submitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Create employee'),
+          ),
+        ],
+      ),
+    );
   }
 }

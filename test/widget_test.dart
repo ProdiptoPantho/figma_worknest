@@ -706,6 +706,60 @@ void main() {
     sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
     expect(sidebarBox.size.width, 320.0);
   });
+
+  testWidgets('admin or HR manager can add employee with email, password, and assignable role type', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _FakeApiClient();
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api));
+    await tester.pumpAndSettle();
+    await _signIn(tester);
+
+    // Navigate to Employee management page
+    final employeeNav = find.text('Employee management');
+    expect(employeeNav, findsOneWidget);
+    await tester.tap(employeeNav);
+    await tester.pumpAndSettle();
+
+    // Verify "Add employee" button is present and click it
+    final addBtn = find.byKey(const ValueKey('add_employee_button'));
+    expect(addBtn, findsOneWidget);
+    await tester.tap(addBtn);
+    await tester.pumpAndSettle();
+
+    // Verify Add Employee Dialog elements
+    expect(find.text('Add employee'), findsWidgets);
+    expect(find.byKey(const ValueKey('add_employee_email_input')), findsOneWidget);
+    expect(find.byKey(const ValueKey('add_employee_password_input')), findsOneWidget);
+    expect(find.byKey(const ValueKey('add_employee_role_dropdown')), findsOneWidget);
+
+    // Test password generator
+    final genBtn = find.byKey(const ValueKey('generate_employee_password_button'));
+    expect(genBtn, findsOneWidget);
+    await tester.tap(genBtn);
+    await tester.pump();
+
+    // Fill in email and role
+    await tester.enterText(find.byKey(const ValueKey('add_employee_email_input')), 'newdev@company.com');
+    await tester.enterText(find.byKey(const ValueKey('add_employee_password_input')), 'SecretPass123!');
+
+    // Select Project Manager role
+    await tester.tap(find.byKey(const ValueKey('add_employee_role_dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Project Manager').last);
+    await tester.pumpAndSettle();
+
+    // Submit via button
+    final submitBtn = find.byKey(const ValueKey('submit_add_employee_button'));
+    expect(submitBtn, findsOneWidget);
+    await tester.tap(submitBtn);
+    await tester.pumpAndSettle();
+
+    // Verify employee was created and appears in the directory list
+    expect(find.text('newdev@company.com'), findsOneWidget);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -1037,16 +1091,35 @@ class _FakeApiClient extends HrmApiClient {
     rejectCalls++;
   }
 
+  final List<ApiUser> _fakeUsers = [
+    const ApiUser(id: 'a34f2cde-fda4-4451-a66d-b6e281d630fa', email: 'admin@company.com', roles: ['super admin'], status: 'Active'),
+    const ApiUser(id: '2237bc48-8948-4d7d-b22d-48e3635707ec', email: 'hrmanager@company.com', roles: ['hr manager'], status: 'Active'),
+    const ApiUser(id: 'c8f7e2d1-4b3a-4e9f-8a7c-1d2e3f4a5b6c', email: 'pm@company.com', roles: ['project manager'], status: 'Active'),
+    const ApiUser(id: '6ad3da0e-3b91-4657-85d0-258a29f25df3', email: 'user1@company.com', roles: ['employee'], status: 'Active'),
+    const ApiUser(id: '37a4d393-814d-495e-9930-772d704660af', email: 'user2@company.com', roles: ['employee'], status: 'Active'),
+    const ApiUser(id: '813407fd-da7a-4fdb-8aeb-097744f994ad', email: 'user3@company.com', roles: ['employee'], status: 'Active'),
+  ];
+
   @override
   Future<List<ApiUser>> listUsers() async {
-    return const [
-      ApiUser(id: 'a34f2cde-fda4-4451-a66d-b6e281d630fa', email: 'admin@company.com', roles: ['super admin'], status: 'Active'),
-      ApiUser(id: '2237bc48-8948-4d7d-b22d-48e3635707ec', email: 'hrmanager@company.com', roles: ['hr manager'], status: 'Active'),
-      ApiUser(id: 'c8f7e2d1-4b3a-4e9f-8a7c-1d2e3f4a5b6c', email: 'pm@company.com', roles: ['project manager'], status: 'Active'),
-      ApiUser(id: '6ad3da0e-3b91-4657-85d0-258a29f25df3', email: 'user1@company.com', roles: ['employee'], status: 'Active'),
-      ApiUser(id: '37a4d393-814d-495e-9930-772d704660af', email: 'user2@company.com', roles: ['employee'], status: 'Active'),
-      ApiUser(id: '813407fd-da7a-4fdb-8aeb-097744f994ad', email: 'user3@company.com', roles: ['employee'], status: 'Active'),
-    ];
+    return List.of(_fakeUsers);
+  }
+
+  @override
+  Future<ApiUser> createEmployee({
+    required String email,
+    required String password,
+    required String roleName,
+    String? fullName,
+  }) async {
+    final newUser = ApiUser(
+      id: 'fake-${DateTime.now().millisecondsSinceEpoch}',
+      email: email,
+      roles: [roleName],
+      status: 'Active',
+    );
+    _fakeUsers.insert(0, newUser);
+    return newUser;
   }
 
   @override
