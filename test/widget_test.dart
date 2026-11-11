@@ -301,6 +301,47 @@ void main() {
     expect(api.leaveRequestCalls, 0);
   });
 
+  testWidgets('request leave dialog displays exact backend validation error on overlapping dates', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    api.requestLeaveError =
+        'You already have a pending or approved leave that overlaps with the requested dates.';
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    await tester.tap(find.text('Leave requests').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('New request'));
+    await tester.pumpAndSettle();
+
+    // Select start date
+    await tester.tap(find.text('Select date').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    // Enter reason
+    await tester.enterText(find.byType(TextFormField).first, 'Medical recovery');
+    await tester.pumpAndSettle();
+
+    // Submit request
+    await tester.tap(find.text('Submit request'));
+    await tester.pumpAndSettle();
+
+    // Dialog stays open and displays exact backend error message
+    expect(
+      find.text('You already have a pending or approved leave that overlaps with the requested dates.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('leave rejection dialog enforces mandatory reason with red asterisk', (
     WidgetTester tester,
   ) async {
@@ -682,6 +723,7 @@ class _FakeApiClient extends HrmApiClient {
   String? resetEmail;
   String? resetPasswordValue;
   String? resetTokenValue;
+  String? requestLeaveError;
   int checkInCalls = 0;
   int checkOutCalls = 0;
   int adminDailyCalls = 0;
@@ -954,6 +996,9 @@ class _FakeApiClient extends HrmApiClient {
     String? reason,
   }) async {
     leaveRequestCalls++;
+    if (requestLeaveError != null) {
+      throw ApiException(requestLeaveError!, 400);
+    }
     return _leaveRecord(leaveType: leaveType);
   }
 

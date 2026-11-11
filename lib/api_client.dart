@@ -1464,6 +1464,12 @@ class HrmApiClient {
       return record;
     }
 
+    // If the live endpoint exists and returned a client/validation error (e.g. 400 Overlapping dates, 422, etc.),
+    // immediately report the actual message from the backend rather than falling through to 404 fallbacks!
+    if (response.statusCode >= 400 && response.statusCode != 404) {
+      _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
+    }
+
     // 2. Try POST /api/leave/apply
     response = await _authorizedRequest(
       (headers) => _client.post(
@@ -1482,6 +1488,10 @@ class HrmApiClient {
       _localRequests.removeWhere((r) => r.id == record.id);
       _localRequests.insert(0, record);
       return record;
+    }
+
+    if (response.statusCode >= 400 && response.statusCode != 404) {
+      _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
     }
 
     // 3. Fallback to /api/leave/requests

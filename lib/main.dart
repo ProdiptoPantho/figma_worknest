@@ -8119,12 +8119,39 @@ class _LeaveRequestDialogState extends State<_LeaveRequestDialog> {
                       ),
                     ],
                     if (_error != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _error!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFFB05B68),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE53935).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: const Color(0xFFE53935).withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 1),
+                              child: Icon(
+                                Icons.error_outline_rounded,
+                                size: 15,
+                                color: Color(0xFFE53935),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFE53935),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
