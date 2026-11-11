@@ -2011,6 +2011,15 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _attendanceBusy = false;
   String? _attendanceError;
 
+  static const double _defaultSidebarWidth = 224.0;
+  static const double _compactSidebarWidth = 72.0;
+  static const double _minSidebarWidth = 68.0;
+  static const double _maxSidebarWidth = 420.0;
+  static const double _collapseThreshold = 140.0;
+
+  double _sidebarWidth = _defaultSidebarWidth;
+  double _lastExpandedWidth = _defaultSidebarWidth;
+
   final _allNavigation = const [
     _NavItem(
       Icons.grid_view_rounded,
@@ -2082,6 +2091,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _role = _roleFromApi(widget.session.roles);
+    _loadSidebarWidth();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_isClockedIn && !_breakStarted && mounted) {
         setState(() => _worked += const Duration(seconds: 1));
@@ -2232,6 +2242,63 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _loadSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getDouble('wn_sidebar_width');
+      if (saved != null && mounted) {
+        setState(() {
+          _sidebarWidth = saved.clamp(_minSidebarWidth, _maxSidebarWidth);
+          if (_sidebarWidth >= _collapseThreshold) {
+            _lastExpandedWidth = _sidebarWidth;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveSidebarWidth() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('wn_sidebar_width', _sidebarWidth);
+    } catch (_) {}
+  }
+
+  void _updateSidebarWidth(double delta) {
+    setState(() {
+      final updated =
+          (_sidebarWidth + delta).clamp(_minSidebarWidth, _maxSidebarWidth);
+      _sidebarWidth = updated;
+      if (updated >= _collapseThreshold) {
+        _lastExpandedWidth = updated;
+      }
+    });
+  }
+
+  void _toggleSidebarCollapse() {
+    setState(() {
+      if (_sidebarWidth < _collapseThreshold) {
+        _sidebarWidth = _lastExpandedWidth < _collapseThreshold
+            ? _defaultSidebarWidth
+            : _lastExpandedWidth;
+      } else {
+        _lastExpandedWidth = _sidebarWidth;
+        _sidebarWidth = _compactSidebarWidth;
+      }
+    });
+    _saveSidebarWidth();
+  }
+
+  void _setSidebarWidth(double width) {
+    setState(() {
+      _sidebarWidth = width.clamp(_minSidebarWidth, _maxSidebarWidth);
+      if (_sidebarWidth >= _collapseThreshold) {
+        _lastExpandedWidth = _sidebarWidth;
+      }
+    });
+    _saveSidebarWidth();
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -2256,8 +2323,9 @@ class _DashboardPageState extends State<DashboardPage> {
               : null,
           body: Row(
             children: [
-              if (!compact)
+              if (!compact) ...[
                 _Sidebar(
+                  width: _sidebarWidth,
                   items: _navigation,
                   selectedIndex: _selectedIndex,
                   role: _role,
@@ -2265,7 +2333,19 @@ class _DashboardPageState extends State<DashboardPage> {
                   onToggleTheme: widget.onToggleTheme,
                   isDark: widget.isDark,
                   onSelected: (index) => setState(() => _selectedIndex = index),
+                  onToggleCollapse: _toggleSidebarCollapse,
+                  lastExpandedWidth: _lastExpandedWidth,
+                  onSetWidth: _setSidebarWidth,
                 ),
+                _SidebarResizeHandle(
+                  isDark: widget.isDark,
+                  sidebarWidth: _sidebarWidth,
+                  onDragDelta: _updateSidebarWidth,
+                  onDragEnd: _saveSidebarWidth,
+                  onDoubleTap: _toggleSidebarCollapse,
+                  onPresetSelected: _setSidebarWidth,
+                ),
+              ],
               Expanded(
                 child: SafeArea(
                   child: Column(
@@ -2459,6 +2539,10 @@ class _Sidebar extends StatelessWidget {
     required this.onSelected,
     this.onToggleTheme,
     this.isDark = false,
+    this.width = 224.0,
+    this.onToggleCollapse,
+    this.lastExpandedWidth = 224.0,
+    this.onSetWidth,
   });
 
   final List<_NavItem> items;
@@ -2468,11 +2552,19 @@ class _Sidebar extends StatelessWidget {
   final ValueChanged<int> onSelected;
   final VoidCallback? onToggleTheme;
   final bool isDark;
+  final double width;
+  final VoidCallback? onToggleCollapse;
+  final double lastExpandedWidth;
+  final ValueChanged<double>? onSetWidth;
+
+  bool get collapsed => width < 140.0;
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = collapsed;
     return Container(
-      width: 224,
+      key: const ValueKey('sidebar_container'),
+      width: width,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0C1921) : const Color(0xFF103A48),
         border: Border(
@@ -2481,72 +2573,191 @@ class _Sidebar extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(18, 24, 14, 18),
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 8 : 16,
+        24,
+        isCompact ? 8 : 14,
+        18,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isCompact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(left: 14, bottom: 34),
-            child: Row(
-              children: [
-                Icon(Icons.hub_rounded, color: Color(0xFF8EE6D4), size: 25),
-                SizedBox(width: 9),
-                Flexible(
-                  child: Text(
-                    'PeopleHub',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
+          Padding(
+            padding: EdgeInsets.only(
+              left: isCompact ? 0 : 12,
+              bottom: isCompact ? 20 : 30,
             ),
+            child: isCompact
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Tooltip(
+                        message: 'PeopleHub',
+                        child: Icon(Icons.hub_rounded, color: Color(0xFF8EE6D4), size: 24),
+                      ),
+                      if (onToggleCollapse != null) ...[
+                        const SizedBox(height: 10),
+                        Tooltip(
+                          message: 'Expand navbar (${lastExpandedWidth.toInt()}px)',
+                          child: InkWell(
+                            key: const ValueKey('sidebar_collapse_button'),
+                            onTap: onToggleCollapse,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 16,
+                                color: Color(0xFFB6C8CD),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : Row(
+                    children: [
+                      const Icon(Icons.hub_rounded, color: Color(0xFF8EE6D4), size: 25),
+                      const SizedBox(width: 9),
+                      const Flexible(
+                        child: Text(
+                          'PeopleHub',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (onToggleCollapse != null) ...[
+                        const Spacer(),
+                        if (onSetWidth != null && width >= 190)
+                          PopupMenuButton<double>(
+                            key: const ValueKey('sidebar_presets_button'),
+                            tooltip: 'Navbar width presets',
+                            icon: const Icon(
+                              Icons.tune_rounded,
+                              size: 16,
+                              color: Color(0xFFA8C1C7),
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onSelected: onSetWidth,
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 72.0,
+                                child: Text('Compact (72px)'),
+                              ),
+                              const PopupMenuItem(
+                                value: 224.0,
+                                child: Text('Standard (224px)'),
+                              ),
+                              const PopupMenuItem(
+                                value: 270.0,
+                                child: Text('Comfortable (270px)'),
+                              ),
+                              const PopupMenuItem(
+                                value: 320.0,
+                                child: Text('Spacious (320px)'),
+                              ),
+                            ],
+                          ),
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Collapse navbar (or drag right border)',
+                          child: InkWell(
+                            key: const ValueKey('sidebar_collapse_button'),
+                            onTap: onToggleCollapse,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(
+                                Icons.chevron_left_rounded,
+                                size: 16,
+                                color: Color(0xFFB6C8CD),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
           ),
           for (var index = 0; index < items.length; index++)
             _SidebarItem(
               item: items[index],
               selected: selectedIndex == index,
+              collapsed: isCompact,
               onTap: () => onSelected(index),
             ),
           const Spacer(),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 8, 14),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  radius: 15,
-                  backgroundColor: Color(0xFFDCEAE8),
-                  child: Text(
-                    'A',
-                    style: TextStyle(
-                      color: Color(0xFF103A48),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    role.label,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.unfold_more_rounded,
-                  color: Color(0xFFA8C1C7),
-                  size: 17,
-                ),
-              ],
+            padding: EdgeInsets.fromLTRB(
+              isCompact ? 0 : 12,
+              8,
+              isCompact ? 0 : 8,
+              14,
             ),
+            child: isCompact
+                ? Tooltip(
+                    message: '${role.label} (Signed in)',
+                    child: const CircleAvatar(
+                      radius: 15,
+                      backgroundColor: Color(0xFFDCEAE8),
+                      child: Text(
+                        'A',
+                        style: TextStyle(
+                          color: Color(0xFF103A48),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  )
+                : Row(
+                    children: [
+                      const CircleAvatar(
+                        radius: 15,
+                        backgroundColor: Color(0xFFDCEAE8),
+                        child: Text(
+                          'A',
+                          style: TextStyle(
+                            color: Color(0xFF103A48),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          role.label,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.unfold_more_rounded,
+                        color: Color(0xFFA8C1C7),
+                        size: 17,
+                      ),
+                    ],
+                  ),
           ),
           if (_RolePolicy.can(role, _Permission.manageCompany))
             _SidebarItem(
@@ -2556,6 +2767,7 @@ class _Sidebar extends StatelessWidget {
                 _Permission.manageCompany,
                 _NavPage.roles,
               ),
+              collapsed: isCompact,
               onTap: () {},
             ),
           if (onToggleTheme != null)
@@ -2566,6 +2778,7 @@ class _Sidebar extends StatelessWidget {
                 _Permission.selfService,
                 _NavPage.overview,
               ),
+              collapsed: isCompact,
               onTap: onToggleTheme!,
             ),
           _SidebarItem(
@@ -2575,6 +2788,7 @@ class _Sidebar extends StatelessWidget {
               _Permission.selfService,
               _NavPage.overview,
             ),
+            collapsed: isCompact,
             onTap: onLogout,
           ),
           _SidebarItem(
@@ -2584,14 +2798,31 @@ class _Sidebar extends StatelessWidget {
               _Permission.selfService,
               _NavPage.overview,
             ),
+            collapsed: isCompact,
             onTap: () {},
           ),
-          const Padding(
-            padding: EdgeInsets.only(left: 14, top: 22),
-            child: Text(
-              'PeopleHub • v2.4',
-              style: TextStyle(color: Color(0xFF8AA7AF), fontSize: 11),
+          Padding(
+            padding: EdgeInsets.only(
+              left: isCompact ? 0 : 14,
+              top: 18,
             ),
+            child: isCompact
+                ? const Tooltip(
+                    message: 'PeopleHub • v2.4',
+                    child: Center(
+                      child: Text(
+                        'v2.4',
+                        style: TextStyle(
+                          color: Color(0xFF8AA7AF),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  )
+                : const Text(
+                    'PeopleHub • v2.4',
+                    style: TextStyle(color: Color(0xFF8AA7AF), fontSize: 11),
+                  ),
           ),
         ],
       ),
@@ -2604,37 +2835,43 @@ class _SidebarItem extends StatelessWidget {
     required this.item,
     required this.onTap,
     this.selected = false,
+    this.collapsed = false,
   });
 
   final _NavItem item;
   final VoidCallback onTap;
   final bool selected;
+  final bool collapsed;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: selected
-            ? (Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF163842)
-                : const Color(0xFF1E5968))
-            : Colors.transparent,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final selectedColor =
+        isDark ? const Color(0xFF163842) : const Color(0xFF1E5968);
+    final iconColor =
+        selected ? const Color(0xFF93E8D8) : const Color(0xFFB6C8CD);
+
+    Widget content = Material(
+      color: selected ? selectedColor : Colors.transparent,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(9),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  item.icon,
-                  size: 18,
-                  color: selected
-                      ? const Color(0xFF93E8D8)
-                      : const Color(0xFFB6C8CD),
-                ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: collapsed ? 8 : 14,
+            vertical: 12,
+          ),
+          child: Row(
+            mainAxisAlignment:
+                collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+            children: [
+              Icon(
+                item.icon,
+                size: 18,
+                color: iconColor,
+              ),
+              if (!collapsed) ...[
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -2644,6 +2881,154 @@ class _SidebarItem extends StatelessWidget {
                       color: selected ? Colors.white : const Color(0xFFB6C8CD),
                       fontSize: 13,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (collapsed) {
+      content = Tooltip(
+        message: item.label,
+        waitDuration: const Duration(milliseconds: 200),
+        child: content,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: content,
+    );
+  }
+}
+
+class _SidebarResizeHandle extends StatefulWidget {
+  const _SidebarResizeHandle({
+    required this.isDark,
+    required this.sidebarWidth,
+    required this.onDragDelta,
+    required this.onDragEnd,
+    required this.onDoubleTap,
+    this.onPresetSelected,
+  });
+
+  final bool isDark;
+  final double sidebarWidth;
+  final ValueChanged<double> onDragDelta;
+  final VoidCallback onDragEnd;
+  final VoidCallback onDoubleTap;
+  final ValueChanged<double>? onPresetSelected;
+
+  @override
+  State<_SidebarResizeHandle> createState() => _SidebarResizeHandleState();
+}
+
+class _SidebarResizeHandleState extends State<_SidebarResizeHandle> {
+  bool _isHovered = false;
+  bool _isDragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _isHovered || _isDragging;
+    final accentColor =
+        widget.isDark ? const Color(0xFF8EE6D4) : const Color(0xFF26A69A);
+    final borderColor = widget.isDark
+        ? const Color(0xFF1E293B)
+        : const Color(0xFF103A48).withValues(alpha: 0.18);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onDoubleTap: widget.onDoubleTap,
+        onHorizontalDragStart: (_) => setState(() => _isDragging = true),
+        onHorizontalDragUpdate: (details) => widget.onDragDelta(details.delta.dx),
+        onHorizontalDragEnd: (_) {
+          setState(() => _isDragging = false);
+          widget.onDragEnd();
+        },
+        child: Tooltip(
+          message:
+              'Drag to resize navbar (${widget.sidebarWidth.toInt()}px) • Double-click to ${widget.sidebarWidth < 140 ? 'expand' : 'collapse'}',
+          waitDuration: const Duration(milliseconds: 300),
+          child: Container(
+            key: const ValueKey('sidebar_resize_handle'),
+            width: 12,
+            color: Colors.transparent,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: active ? 3 : 1,
+                  decoration: BoxDecoration(
+                    color: active ? accentColor : borderColor,
+                    boxShadow: active
+                        ? [
+                            BoxShadow(
+                              color: accentColor.withValues(alpha: 0.4),
+                              blurRadius: 4,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: active ? 1.0 : 0.0,
+                  child: Container(
+                    width: 8,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: accentColor,
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 1.5,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            width: 4,
+                            height: 1.5,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            width: 4,
+                            height: 1.5,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -577,6 +577,94 @@ void main() {
 
     expect(find.text('FILE VERIFICATION AUDIT'), findsNothing);
   });
+
+  testWidgets('user can resize navbar with drag handle and collapse/expand', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    // Initial sidebar width is 224
+    final sidebarFinder = find.byKey(const ValueKey('sidebar_container'));
+    expect(sidebarFinder, findsOneWidget);
+    var sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, 224.0);
+
+    // Resize by dragging the resize handle to the right
+    final handleFinder = find.byKey(const ValueKey('sidebar_resize_handle'));
+    expect(handleFinder, findsOneWidget);
+    await tester.drag(handleFinder, const Offset(60, 0));
+    await tester.pumpAndSettle();
+
+    sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    final resizedWidth = sidebarBox.size.width;
+    expect(resizedWidth, greaterThan(224.0));
+
+    // Click collapse button in header
+    final collapseBtn = find.byKey(const ValueKey('sidebar_collapse_button'));
+    expect(collapseBtn, findsOneWidget);
+    await tester.tap(collapseBtn);
+    await tester.pumpAndSettle();
+
+    // Verify collapsed to compact rail (72px)
+    sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, 72.0);
+
+    // Click expand button to restore previous expanded width
+    final expandBtn = find.byKey(const ValueKey('sidebar_collapse_button'));
+    await tester.tap(expandBtn);
+    await tester.pumpAndSettle();
+
+    sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, resizedWidth);
+
+    // Double tap resize handle to toggle collapse
+    await tester.tap(handleFinder);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(handleFinder);
+    await tester.pumpAndSettle();
+
+    sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, 72.0);
+  });
+
+  testWidgets('user can change navbar size via preset menu', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeApiClient();
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    final sidebarFinder = find.byKey(const ValueKey('sidebar_container'));
+    var sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, 224.0);
+
+    // Open preset menu and select Spacious (320px)
+    final presetsBtn = find.byKey(const ValueKey('sidebar_presets_button'));
+    expect(presetsBtn, findsOneWidget);
+    await tester.tap(presetsBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Spacious (320px)'), findsOneWidget);
+    await tester.tap(find.text('Spacious (320px)'));
+    await tester.pumpAndSettle();
+
+    sidebarBox = tester.renderObject<RenderBox>(sidebarFinder);
+    expect(sidebarBox.size.width, 320.0);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
