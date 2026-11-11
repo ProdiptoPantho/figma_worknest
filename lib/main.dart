@@ -2309,6 +2309,7 @@ class _DashboardPageState extends State<DashboardPage> {
           drawer: compact
               ? Drawer(
                   child: _Sidebar(
+                    session: widget.session,
                     items: _navigation,
                     selectedIndex: _selectedIndex,
                     role: _role,
@@ -2326,6 +2327,7 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               if (!compact) ...[
                 _Sidebar(
+                  session: widget.session,
                   width: _sidebarWidth,
                   items: _navigation,
                   selectedIndex: _selectedIndex,
@@ -2370,6 +2372,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               _navigation[_selectedIndex].page ==
                                   _NavPage.overview
                               ? _DashboardContent(
+                                  session: widget.session,
                                   compact: compact,
                                   worked: _formatDuration(_worked),
                                   workedDetail:
@@ -2533,6 +2536,7 @@ class _MobileHeader extends StatelessWidget {
 
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
+    required this.session,
     required this.items,
     required this.selectedIndex,
     required this.role,
@@ -2546,6 +2550,7 @@ class _Sidebar extends StatelessWidget {
     this.onSetWidth,
   });
 
+  final AuthSession session;
   final List<_NavItem> items;
   final int selectedIndex;
   final _Role role;
@@ -2712,13 +2717,13 @@ class _Sidebar extends StatelessWidget {
             ),
             child: isCompact
                 ? Tooltip(
-                    message: '${role.label} (Signed in)',
-                    child: const CircleAvatar(
+                    message: '${role.label} (${session.displayName})',
+                    child: CircleAvatar(
                       radius: 15,
-                      backgroundColor: Color(0xFFDCEAE8),
+                      backgroundColor: const Color(0xFFDCEAE8),
                       child: Text(
-                        'A',
-                        style: TextStyle(
+                        session.avatarLetter,
+                        style: const TextStyle(
                           color: Color(0xFF103A48),
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -2728,12 +2733,12 @@ class _Sidebar extends StatelessWidget {
                   )
                 : Row(
                     children: [
-                      const CircleAvatar(
+                      CircleAvatar(
                         radius: 15,
-                        backgroundColor: Color(0xFFDCEAE8),
+                        backgroundColor: const Color(0xFFDCEAE8),
                         child: Text(
-                          'A',
-                          style: TextStyle(
+                          session.avatarLetter,
+                          style: const TextStyle(
                             color: Color(0xFF103A48),
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
@@ -2742,14 +2747,28 @@ class _Sidebar extends StatelessWidget {
                       ),
                       const SizedBox(width: 9),
                       Expanded(
-                        child: Text(
-                          role.label,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              role.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              session.displayName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFA8C1C7),
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const Icon(
@@ -3044,6 +3063,7 @@ class _SidebarResizeHandleState extends State<_SidebarResizeHandle> {
 
 class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
+    required this.session,
     required this.compact,
     required this.worked,
     required this.workedDetail,
@@ -3062,6 +3082,7 @@ class _DashboardContent extends StatelessWidget {
     required this.onAction,
   });
 
+  final AuthSession session;
   final bool compact;
   final String worked;
   final String workedDetail;
@@ -3079,6 +3100,34 @@ class _DashboardContent extends StatelessWidget {
   final Future<void> Function() onRefreshAttendance;
   final ValueChanged<String> onAction;
 
+  String _formattedDate() {
+    final now = DateTime.now();
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
+    ];
+    return '${weekdays[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}, ${now.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -3092,12 +3141,12 @@ class _DashboardContent extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Good afternoon, Alex',
+                    'Good afternoon, ${session.displayName}',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    'Tuesday, November 18, 2026',
+                    _formattedDate(),
                     style: TextStyle(
                       color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF83939A),
                       fontSize: 12,
@@ -3110,7 +3159,7 @@ class _DashboardContent extends StatelessWidget {
               radius: 19,
               backgroundColor: isDark ? const Color(0xFF1E3A4D) : const Color(0xFFDCEAE8),
               child: Text(
-                'A',
+                session.avatarLetter,
                 style: TextStyle(
                   color: isDark ? const Color(0xFF67E8F9) : const Color(0xFF103A48),
                   fontWeight: FontWeight.w800,
@@ -9380,13 +9429,35 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
     } catch (_) {}
   }
 
-  int get _totalCount => _tasks.length;
-  int get _completedCount => _tasks.where((t) => t.status == TaskState.done).length;
-  int get _inProgressCount => _tasks.where((t) => t.status == TaskState.inProgress).length;
-  int get _highPriorityCount => _tasks.where((t) => t.priority == TaskPriority.high && t.status != TaskState.done).length;
+  bool _onlyMyTasks = false;
+
+  List<EmployeeTask> get _roleFilteredTasks {
+    final myEmail = widget.session.email.toLowerCase().trim();
+    if (_canAssign) {
+      if (_onlyMyTasks) {
+        return _tasks.where((task) {
+          final assignedTo = (task.assigneeEmail ?? '').toLowerCase().trim();
+          final assignedBy = (task.assignedByEmail ?? '').toLowerCase().trim();
+          return assignedTo == myEmail || assignedBy == myEmail;
+        }).toList();
+      }
+      return _tasks;
+    }
+    // Standard employee: role-based isolation, ONLY sees tasks assigned to them or created by them
+    return _tasks.where((task) {
+      final assignedTo = (task.assigneeEmail ?? '').toLowerCase().trim();
+      final assignedBy = (task.assignedByEmail ?? '').toLowerCase().trim();
+      return assignedTo == myEmail || assignedBy == myEmail;
+    }).toList();
+  }
+
+  int get _totalCount => _roleFilteredTasks.length;
+  int get _completedCount => _roleFilteredTasks.where((t) => t.status == TaskState.done).length;
+  int get _inProgressCount => _roleFilteredTasks.where((t) => t.status == TaskState.inProgress).length;
+  int get _highPriorityCount => _roleFilteredTasks.where((t) => t.priority == TaskPriority.high && t.status != TaskState.done).length;
 
   List<EmployeeTask> get _filteredTasks {
-    return _tasks.where((task) {
+    return _roleFilteredTasks.where((task) {
       if (_statusFilter != null && task.status != _statusFilter) return false;
       if (_priorityFilter != null && task.priority != _priorityFilter) return false;
       if (_categoryFilter != 'All' && task.category != _categoryFilter) return false;
@@ -9502,6 +9573,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final tasks = _filteredTasks;
     final categories = {
       'All',
@@ -9540,7 +9612,9 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
         ),
         const SizedBox(height: 18),
         _Panel(
-          title: _canAssign ? 'Project task deliverables' : 'My active tasks',
+          title: _canAssign
+              ? (_onlyMyTasks ? 'Tasks assigned to me' : 'Project task deliverables')
+              : 'My assigned deliverables',
           trailing: SizedBox(
             width: 220,
             child: TextField(
@@ -9556,6 +9630,38 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_canAssign) ...[
+                Row(
+                  children: [
+                    ChoiceChip(
+                      label: const Text('All team tasks', style: TextStyle(fontSize: 11)),
+                      selected: !_onlyMyTasks,
+                      onSelected: (_) => setState(() => _onlyMyTasks = false),
+                      selectedColor: const Color(0xFF103A48),
+                      labelStyle: TextStyle(
+                        color: !_onlyMyTasks ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D)),
+                        fontWeight: !_onlyMyTasks ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      showCheckmark: false,
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Assigned to me', style: TextStyle(fontSize: 11)),
+                      selected: _onlyMyTasks,
+                      onSelected: (_) => setState(() => _onlyMyTasks = true),
+                      selectedColor: const Color(0xFF103A48),
+                      labelStyle: TextStyle(
+                        color: _onlyMyTasks ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF41555D)),
+                        fontWeight: _onlyMyTasks ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      showCheckmark: false,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -9589,7 +9695,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
                       )),
                 ],
               ),
-              if (_canAssign && distinctAssignees.length > 2) ...[
+              if (_canAssign && !_onlyMyTasks && distinctAssignees.length > 2) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
@@ -9624,10 +9730,12 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
               if (tasks.isEmpty)
                 _EmptyState(
                   icon: Icons.task_alt_rounded,
-                  title: 'No tasks found',
+                  title: _canAssign ? 'No tasks found' : 'No tasks assigned to you yet',
                   message: _search.isNotEmpty || _statusFilter != null || _assigneeFilter != 'All'
                       ? 'No tasks match your current filters.'
-                      : 'You are all clear! Add or assign a new task to keep things moving.',
+                      : (_canAssign
+                          ? 'You are all clear! Add or assign a new task to keep things moving.'
+                          : 'When your project manager or team lead assigns deliverables to ${widget.session.email}, they will appear here.'),
                 )
               else
                 ListView.separated(

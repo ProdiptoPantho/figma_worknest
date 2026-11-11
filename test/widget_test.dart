@@ -760,6 +760,84 @@ void main() {
     // Verify employee was created and appears in the directory list
     expect(find.text('newdev@company.com'), findsOneWidget);
   });
+
+  testWidgets('overview displays dynamic user name and avatar, not hardcoded Alex', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const session = AuthSession(
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      email: 'sara.connor@company.com',
+      roles: ['super admin'],
+      permissions: [],
+      fullName: 'Sara Connor',
+    );
+    final api = _FakeApiClient(fakeRestoredSession: session);
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: session));
+    await tester.pumpAndSettle();
+
+    // Verify dynamic name is displayed in greeting
+    expect(find.textContaining('Sara Connor'), findsWidgets);
+    expect(find.text('Good afternoon, Alex'), findsNothing);
+    // Verify avatar shows S
+    expect(find.text('S'), findsWidgets);
+  });
+
+  testWidgets('standard employee only sees tasks connected to them and not other employees tasks', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const employeeSession = AuthSession(
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      email: 'user3@company.com',
+      roles: ['user'],
+      permissions: [],
+    );
+    final api = _FakeApiClient();
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: employeeSession));
+    await tester.pumpAndSettle();
+
+    // Navigate to tasks
+    await tester.tap(find.text('Tasks'));
+    await tester.pumpAndSettle();
+
+    // user3@company.com should see task-3 (assigned to user3@company.com)
+    expect(find.textContaining('two-factor authentication'), findsOneWidget);
+
+    // user3@company.com should NOT see user1 or user2 tasks
+    expect(find.textContaining('Employee Handbook 2026'), findsNothing);
+    expect(find.textContaining('Submit timesheet'), findsNothing);
+  });
+
+  testWidgets('super admin role gets full access to all navigation sections', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const adminSession = AuthSession(
+      accessToken: 'token',
+      refreshToken: 'refresh',
+      email: 'admin@company.com',
+      roles: ['super admin'],
+      permissions: [],
+    );
+    final api = _FakeApiClient();
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: adminSession));
+    await tester.pumpAndSettle();
+
+    // Verify full access navigation items
+    expect(find.text('Overview'), findsOneWidget);
+    expect(find.text('Tasks'), findsOneWidget);
+    expect(find.text('Employee management'), findsOneWidget);
+    expect(find.text('Attendance'), findsWidgets);
+    expect(find.text('Role management'), findsOneWidget);
+    expect(find.text('Payroll'), findsOneWidget);
+    expect(find.text('Super Admin / Owner'), findsOneWidget);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
