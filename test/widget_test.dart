@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 // This is a basic Flutter widget test.
 //
@@ -838,6 +839,52 @@ void main() {
     expect(find.text('Payroll'), findsOneWidget);
     expect(find.text('Super Admin / Owner'), findsOneWidget);
   });
+
+  testWidgets('persisted leave requests remain visible across reloads', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client1 = HrmApiClient();
+    client1.setSessionEmail('worker@company.com');
+
+    // Simulate saving a leave request to SharedPreferences
+    final record = LeaveRequestRecord(
+      id: 'persisted-req-1',
+      userId: 'user-worker-1',
+      userEmail: 'worker@company.com',
+      leaveType: 'Sick',
+      startDate: DateTime(2026, 12, 1),
+      endDate: DateTime(2026, 12, 3),
+      totalDays: 3,
+      reason: 'Medical rest',
+      status: LeaveStatus.pending,
+      reviewComment: null,
+      reviewedByEmail: null,
+      createdAt: DateTime(2026, 11, 12),
+      reviewedAt: null,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wn_persisted_leave_requests', jsonEncode([record.toJson()]));
+
+    // Now instantiate a fresh client simulating a page reload
+    final client2 = HrmApiClient();
+    client2.setSessionEmail('worker@company.com');
+
+    final myLeave = await client2.getMyLeave();
+    expect(myLeave.requests.any((r) => r.id == 'persisted-req-1'), isTrue);
+    expect(myLeave.requests.firstWhere((r) => r.id == 'persisted-req-1').userEmail, 'worker@company.com');
+
+    final adminLeave = await client2.getLeaveRequests();
+    expect(adminLeave.requests.any((r) => r.id == 'persisted-req-1'), isTrue);
+
+    // Now test reviewing the request
+    await client2.approveLeaveRequest('persisted-req-1', comment: 'Approved by HR');
+
+    // Fresh client 3 simulating another page reload
+    final client3 = HrmApiClient();
+    final updatedAdminLeave = await client3.getLeaveRequests();
+    final reviewed = updatedAdminLeave.requests.firstWhere((r) => r.id == 'persisted-req-1');
+    expect(reviewed.status, LeaveStatus.approved);
+    expect(reviewed.reviewComment, 'Approved by HR');
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -1126,6 +1173,7 @@ class _FakeApiClient extends HrmApiClient {
     required DateTime startDate,
     required DateTime endDate,
     String? reason,
+    String? userEmail,
   }) async {
     leaveRequestCalls++;
     if (requestLeaveError != null) {

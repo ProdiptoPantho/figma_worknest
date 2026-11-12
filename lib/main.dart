@@ -79,6 +79,9 @@ class _WorknestAppState extends State<WorknestApp> {
     super.initState();
     _api = widget.api ?? HrmApiClient();
     _session = widget.initialSession;
+    if (_session != null) {
+      _api.setSessionEmail(_session!.email);
+    }
     _pendingReset = widget.resetLink ?? _resetLinkFromUri(Uri.base);
     if (_pendingReset != null && kIsWeb) {
       SystemNavigator.routeInformationUpdated(
@@ -345,6 +348,7 @@ class _WorknestAppState extends State<WorknestApp> {
                   initialReset: _pendingReset,
                   onToggleTheme: _toggleTheme,
                   onAuthenticated: (session) => setState(() {
+                    _api.setSessionEmail(session.email);
                     _session = session;
                     _pendingReset = null;
                   }),

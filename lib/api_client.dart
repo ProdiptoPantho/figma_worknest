@@ -531,6 +531,22 @@ class LeaveRequestRecord {
 
   bool get isPending => status == LeaveStatus.pending;
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'userId': userId,
+    'userEmail': userEmail,
+    'leaveType': leaveType,
+    'startDate': startDate != null ? _formatApiDate(startDate!) : null,
+    'endDate': endDate != null ? _formatApiDate(endDate!) : null,
+    'totalDays': totalDays,
+    'reason': reason,
+    'status': status.name,
+    'reviewComment': reviewComment,
+    'reviewedByEmail': reviewedByEmail,
+    'createdAt': createdAt?.toIso8601String(),
+    'reviewedAt': reviewedAt?.toIso8601String(),
+  };
+
   factory LeaveRequestRecord.fromJson(Map<String, dynamic> json) {
     final days = _asInt(json['totalDays']) != 0
         ? _asInt(json['totalDays'])
@@ -873,6 +889,14 @@ class HrmApiClient {
   final http.Client _client;
   String? _accessToken;
   String? _refreshToken;
+  String? _currentEmail;
+
+  String? get currentEmail => _currentEmail;
+  void setSessionEmail(String email) => _currentEmail = email.trim().toLowerCase();
+
+  static const _persistedLeaveRequestsKey = 'wn_persisted_leave_requests';
+  static const _persistedReviewedStatusesKey = 'wn_persisted_reviewed_statuses';
+  static const _persistedReviewedCommentsKey = 'wn_persisted_reviewed_comments';
 
   Map<String, String> get _jsonHeaders => {
     'Content-Type': 'application/json',
@@ -912,6 +936,7 @@ class HrmApiClient {
 
     final profile = await _getMe();
     final cleanEmail = (data['email'] as String? ?? email).trim().toLowerCase();
+    _currentEmail = cleanEmail;
 
     final List<String> effectiveRoles = List.from(profile.roles);
     String? savedFullName;
@@ -993,6 +1018,7 @@ class HrmApiClient {
     } finally {
       _accessToken = null;
       _refreshToken = null;
+      _currentEmail = null;
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('wn_accessToken');
@@ -1026,6 +1052,7 @@ class HrmApiClient {
         final profile = await _getMe().timeout(const Duration(seconds: 10));
         final List<String> effectiveRoles = List.from(profile.roles);
         final cleanEmail = (savedEmail ?? '').trim().toLowerCase();
+        _currentEmail = cleanEmail.isNotEmpty ? cleanEmail : null;
         final rolesMapStr = prefs.getString('wn_custom_roles_map');
         if (rolesMapStr != null) {
           final rolesMap = jsonDecode(rolesMapStr) as Map<String, dynamic>;
@@ -1554,6 +1581,98 @@ class HrmApiClient {
     return defaultLeaveTypes;
   }
 
+  Future<void> _loadPersistedRequests() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_currentEmail == null || _currentEmail!.isEmpty) {
+        final saved = prefs.getString('wn_email');
+        if (saved != null && saved.isNotEmpty) {
+          _currentEmail = saved.trim().toLowerCase();
+        }
+      }
+
+      final requestsJson = prefs.getString(_persistedLeaveRequestsKey);
+      if (requestsJson != null && requestsJson.isNotEmpty) {
+        final decoded = jsonDecode(requestsJson);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              final map = Map<String, dynamic>.from(item);
+              final record = LeaveRequestRecord.fromJson(map);
+              if (!_localRequests.any((r) => r.id == record.id)) {
+                _localRequests.add(record);
+              }
+            }
+          }
+        }
+      }
+
+      final statusesJson = prefs.getString(_persistedReviewedStatusesKey);
+      if (statusesJson != null && statusesJson.isNotEmpty) {
+        final decoded = jsonDecode(statusesJson);
+        if (decoded is Map) {
+          decoded.forEach((key, val) {
+            _reviewedStatuses[key.toString()] = LeaveStatus.fromApi(val);
+          });
+        }
+      }
+
+      final commentsJson = prefs.getString(_persistedReviewedCommentsKey);
+      if (commentsJson != null && commentsJson.isNotEmpty) {
+        final decoded = jsonDecode(commentsJson);
+        if (decoded is Map) {
+          decoded.forEach((key, val) {
+            _reviewedComments[key.toString()] = val?.toString() ?? '';
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveLocalRequest(LeaveRequestRecord record) async {
+    _localRequests.removeWhere((r) => r.id == record.id);
+    _localRequests.insert(0, record);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final serialized = _localRequests.map((r) => r.toJson()).toList();
+      await prefs.setString(_persistedLeaveRequestsKey, jsonEncode(serialized));
+    } catch (_) {}
+  }
+
+  Future<void> _persistReview(String requestId, LeaveStatus status, [String? comment]) async {
+    _reviewedStatuses[requestId] = status;
+    if (comment != null && comment.isNotEmpty) {
+      _reviewedComments[requestId] = comment;
+    }
+    final idx = _localRequests.indexWhere((r) => r.id == requestId);
+    if (idx != -1) {
+      final orig = _localRequests[idx];
+      _localRequests[idx] = LeaveRequestRecord(
+        id: orig.id,
+        userId: orig.userId,
+        userEmail: orig.userEmail,
+        leaveType: orig.leaveType,
+        startDate: orig.startDate,
+        endDate: orig.endDate,
+        totalDays: orig.totalDays,
+        reason: orig.reason,
+        status: status,
+        reviewComment: comment ?? orig.reviewComment,
+        reviewedByEmail: orig.reviewedByEmail ?? _currentEmail ?? 'Manager',
+        createdAt: orig.createdAt,
+        reviewedAt: DateTime.now(),
+      );
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final statusMap = _reviewedStatuses.map((k, v) => MapEntry(k, v.name));
+      await prefs.setString(_persistedReviewedStatusesKey, jsonEncode(statusMap));
+      await prefs.setString(_persistedReviewedCommentsKey, jsonEncode(_reviewedComments));
+      final serialized = _localRequests.map((r) => r.toJson()).toList();
+      await prefs.setString(_persistedLeaveRequestsKey, jsonEncode(serialized));
+    } catch (_) {}
+  }
+
   List<LeaveRequestRecord> _applyStatusOverrides(List<LeaveRequestRecord> rawList) {
     return rawList.map((r) {
       final override = _reviewedStatuses[r.id];
@@ -1579,6 +1698,16 @@ class HrmApiClient {
   }
 
   Future<MyLeave> getMyLeave({int? year}) async {
+    await _loadPersistedRequests();
+
+    final userLocalRequests = _currentEmail != null && _currentEmail!.isNotEmpty
+        ? _localRequests
+            .where((r) =>
+                r.userEmail.isEmpty ||
+                r.userEmail.toLowerCase() == _currentEmail!.toLowerCase())
+            .toList()
+        : _localRequests;
+
     try {
       final response = await _authorizedRequest(
         (headers) => _client.get(
@@ -1589,8 +1718,13 @@ class HrmApiClient {
       );
       if (response.statusCode == 200) {
         final decoded = MyLeave.fromJson(_decode(response));
-        final allRequests = [..._localRequests, ...decoded.requests];
-        final overridden = _applyStatusOverrides(allRequests);
+        final combined = <LeaveRequestRecord>[...userLocalRequests];
+        for (final r in decoded.requests) {
+          if (!combined.any((x) => x.id == r.id)) {
+            combined.add(r);
+          }
+        }
+        final overridden = _applyStatusOverrides(combined);
         return MyLeave(
           year: decoded.year,
           balances: decoded.balances,
@@ -1625,7 +1759,7 @@ class HrmApiClient {
         final casualRemRaw = _asInt(data['remainingCasualLeave']);
         final casualRemaining = casualRemRaw > 0 ? casualRemRaw : (casualAllowance - casualUsed);
 
-        final overridden = _applyStatusOverrides(_localRequests);
+        final overridden = _applyStatusOverrides(userLocalRequests);
         final sickPending = overridden
             .where((r) => r.leaveType.toLowerCase() == 'sick' && r.isPending)
             .fold<int>(0, (sum, r) => sum + r.totalDays);
@@ -1661,7 +1795,7 @@ class HrmApiClient {
       }
     } catch (_) {}
 
-    final overridden = _applyStatusOverrides(_localRequests);
+    final overridden = _applyStatusOverrides(userLocalRequests);
     return MyLeave(
       year: year ?? DateTime.now().year,
       balances: [
@@ -1693,10 +1827,27 @@ class HrmApiClient {
     required DateTime startDate,
     required DateTime endDate,
     String? reason,
+    String? userEmail,
   }) async {
     final effectiveReason = (reason != null && reason.trim().isNotEmpty)
         ? reason.trim()
         : '$leaveType leave';
+    final effectiveEmail = (userEmail != null && userEmail.trim().isNotEmpty)
+        ? userEmail.trim().toLowerCase()
+        : (_currentEmail ?? '');
+
+    LeaveRequestRecord parseAndEnrich(http.Response res) {
+      final decodedMap = Map<String, dynamic>.from(_decode(res) as Map);
+      var email = decodedMap['userEmail']?.toString() ?? '';
+      if (email.isEmpty) {
+        email = effectiveEmail;
+      }
+      decodedMap['userEmail'] = email;
+      if (decodedMap['reason'] == null || decodedMap['reason'].toString().isEmpty) {
+        decodedMap['reason'] = effectiveReason;
+      }
+      return LeaveRequestRecord.fromJson(decodedMap);
+    }
 
     // 1. Try POST /api/leaves/apply (Live Render backend endpoint)
     var response = await _authorizedRequest(
@@ -1712,9 +1863,8 @@ class HrmApiClient {
       ),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
-      final record = LeaveRequestRecord.fromJson(_decode(response));
-      _localRequests.removeWhere((r) => r.id == record.id);
-      _localRequests.insert(0, record);
+      final record = parseAndEnrich(response);
+      await _saveLocalRequest(record);
       return record;
     }
 
@@ -1738,9 +1888,8 @@ class HrmApiClient {
       ),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
-      final record = LeaveRequestRecord.fromJson(_decode(response));
-      _localRequests.removeWhere((r) => r.id == record.id);
-      _localRequests.insert(0, record);
+      final record = parseAndEnrich(response);
+      await _saveLocalRequest(record);
       return record;
     }
 
@@ -1763,28 +1912,27 @@ class HrmApiClient {
         ),
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final record = LeaveRequestRecord.fromJson(_decode(response));
-        _localRequests.removeWhere((r) => r.id == record.id);
-        _localRequests.insert(0, record);
+        final record = parseAndEnrich(response);
+        await _saveLocalRequest(record);
         return record;
       }
     }
 
     // Throw actual backend error (e.g. 400 Bad Request)
     _throwIfNotSuccessful(response, 'Unable to submit the leave request.');
-    final record = LeaveRequestRecord.fromJson(_decode(response));
-    _localRequests.removeWhere((r) => r.id == record.id);
-    _localRequests.insert(0, record);
+    final record = parseAndEnrich(response);
+    await _saveLocalRequest(record);
     return record;
   }
 
   Future<void> cancelLeaveRequest(String requestId) async {
-    _reviewedStatuses[requestId] = LeaveStatus.cancelled;
-    // 1. Try DELETE /api/leave/$requestId/cancel (Render backend endpoint)
+    await _persistReview(requestId, LeaveStatus.cancelled);
+    if (_accessToken == null) return;
+    // 1. Try DELETE /api/leaves/$requestId/cancel (Render backend endpoint)
     try {
       final response = await _authorizedRequest(
         (headers) => _client.delete(
-          Uri.parse('$baseUrl/api/leave/$requestId/cancel'),
+          Uri.parse('$baseUrl/api/leaves/$requestId/cancel'),
           headers: headers,
         ),
       );
@@ -1809,6 +1957,7 @@ class HrmApiClient {
     int page = 1,
     int pageSize = 50,
   }) async {
+    await _loadPersistedRequests();
     List<LeaveRequestRecord> rawList = const [];
     try {
       final response = await _authorizedRequest(
@@ -1828,15 +1977,15 @@ class HrmApiClient {
       }
     } catch (_) {}
 
-    if (rawList.isEmpty) {
-      try {
-        final myLeave = await getMyLeave();
-        rawList = myLeave.requests;
-      } catch (_) {}
+    final combined = <LeaveRequestRecord>[..._localRequests];
+    for (final r in rawList) {
+      if (!combined.any((x) => x.id == r.id)) {
+        combined.add(r);
+      }
     }
 
     // Apply reviewed status overrides
-    final withOverrides = _applyStatusOverrides(rawList);
+    final withOverrides = _applyStatusOverrides(combined);
 
     var filtered = withOverrides;
     if (status != null) {
@@ -1852,10 +2001,8 @@ class HrmApiClient {
   }
 
   Future<void> approveLeaveRequest(String requestId, {String? comment}) async {
-    _reviewedStatuses[requestId] = LeaveStatus.approved;
-    if (comment != null && comment.isNotEmpty) {
-      _reviewedComments[requestId] = comment;
-    }
+    await _persistReview(requestId, LeaveStatus.approved, comment);
+    if (_accessToken == null) return;
     try {
       final response = await _authorizedRequest(
         (headers) => _client.post(
@@ -1879,8 +2026,8 @@ class HrmApiClient {
     final effectiveComment = (comment != null && comment.trim().isNotEmpty)
         ? comment.trim()
         : 'Request rejected by manager';
-    _reviewedStatuses[requestId] = LeaveStatus.rejected;
-    _reviewedComments[requestId] = effectiveComment;
+    await _persistReview(requestId, LeaveStatus.rejected, effectiveComment);
+    if (_accessToken == null) return;
 
     // 1. Try cancel endpoint as fallback so remote state syncs
     try {
