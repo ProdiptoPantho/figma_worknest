@@ -15,6 +15,10 @@ import 'package:figma_worknest/api_client.dart';
 import 'package:figma_worknest/main.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('dashboard renders primary workday controls', (
     WidgetTester tester,
   ) async {
@@ -885,6 +889,238 @@ void main() {
     expect(reviewed.status, LeaveStatus.approved);
     expect(reviewed.reviewComment, 'Approved by HR');
   });
+
+  testWidgets('hr manager views calendar with attendees, absent, and on-leave metrics with leaves excluded from absent', (tester) async {
+    const hrSession = AuthSession(
+      accessToken: 'token-hr',
+      refreshToken: 'refresh-hr',
+      email: 'hrmanager@company.com',
+      roles: ['hr manager'],
+      permissions: [],
+    );
+    final api = _FakeApiClient();
+    final today = DateTime.now();
+    api.fakeDailyReport = AdminDailyReport(
+      date: today,
+      records: [
+        AdminDailyEntry(
+          userId: 'u-1',
+          userEmail: 'alice@company.com',
+          userGoal: 'Designer',
+          date: today,
+          checkInAt: DateTime(today.year, today.month, today.day, 9, 0),
+          checkOutAt: null,
+          status: AttendanceStatus.present,
+          workingDurationMinutes: 120,
+          lateMinutes: 0,
+          hasRecord: true,
+        ),
+        AdminDailyEntry(
+          userId: 'u-2',
+          userEmail: 'bob@company.com',
+          userGoal: 'Developer',
+          date: today,
+          checkInAt: null,
+          checkOutAt: null,
+          status: AttendanceStatus.onLeave,
+          workingDurationMinutes: 0,
+          lateMinutes: 0,
+          hasRecord: false,
+        ),
+        AdminDailyEntry(
+          userId: 'u-3',
+          userEmail: 'charlie@company.com',
+          userGoal: 'Analyst',
+          date: today,
+          checkInAt: null,
+          checkOutAt: null,
+          status: AttendanceStatus.absent,
+          workingDurationMinutes: 0,
+          lateMinutes: 0,
+          hasRecord: false,
+        ),
+      ],
+      totalUsers: 3,
+      presentCount: 1,
+      lateCount: 0,
+      absentCount: 1,
+      onLeaveCount: 1,
+      noRecordCount: 1,
+    );
+
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: hrSession));
+    await tester.pumpAndSettle();
+
+    // Navigate to Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Verify HR metrics: Attendees, On Leave, Absent
+    expect(find.text('Total Attendees'), findsOneWidget);
+    expect(find.text('On Leave'), findsWidgets);
+    expect(find.text('Absent'), findsWidgets);
+
+    // Verify compliance rule notice
+    expect(find.textContaining('excluded from Absent'), findsOneWidget);
+
+    // Verify employee directory status in calendar
+    expect(find.text('alice@company.com'), findsOneWidget);
+    expect(find.text('bob@company.com'), findsOneWidget);
+    expect(find.text('charlie@company.com'), findsOneWidget);
+  });
+
+  testWidgets('project manager views calendar and sees assigned tasks separated by projects', (tester) async {
+    const pmSession = AuthSession(
+      accessToken: 'token-pm',
+      refreshToken: 'refresh-pm',
+      email: 'pm@company.com',
+      roles: ['project manager'],
+      permissions: [],
+    );
+    final now = DateTime.now();
+    final api = _FakeApiClient();
+    api.customTasks = [
+      TaskRecord(
+        id: 'pm-t1',
+        title: 'Deploy Kubernetes cluster',
+        description: 'Set up production ingress and helm charts.',
+        status: 'In Progress',
+        priority: 'High',
+        category: 'DevOps & Infrastructure',
+        dueDate: DateTime(now.year, now.month, now.day, 16, 0),
+        assignedToEmail: 'user1@company.com',
+        assignedByEmail: 'pm@company.com',
+      ),
+      TaskRecord(
+        id: 'pm-t2',
+        title: 'Revamp authentication landing page',
+        description: 'Implement responsive Figma layout.',
+        status: 'Todo',
+        priority: 'Medium',
+        category: 'Frontend Portal',
+        dueDate: DateTime(now.year, now.month, now.day, 17, 30),
+        assignedToEmail: 'user2@company.com',
+        assignedByEmail: 'pm@company.com',
+      ),
+    ];
+
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: pmSession));
+    await tester.pumpAndSettle();
+
+    // Navigate to Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Verify tasks separated by projects
+    expect(find.text('Project: DevOps & Infrastructure'), findsOneWidget);
+    expect(find.text('Project: Frontend Portal'), findsOneWidget);
+
+    // Verify task details and assignee
+    expect(find.text('Deploy Kubernetes cluster'), findsOneWidget);
+    expect(find.textContaining('user1@company.com'), findsOneWidget);
+    expect(find.text('Revamp authentication landing page'), findsOneWidget);
+    expect(find.textContaining('user2@company.com'), findsOneWidget);
+  });
+
+  testWidgets('standard employee views calendar and sees only their deadlines', (tester) async {
+    const userSession = AuthSession(
+      accessToken: 'token-user',
+      refreshToken: 'refresh-user',
+      email: 'user1@company.com',
+      roles: ['employee'],
+      permissions: [],
+    );
+    final now = DateTime.now();
+    final api = _FakeApiClient();
+    api.customTasks = [
+      TaskRecord(
+        id: 'my-t1',
+        title: 'Complete security compliance questionnaire',
+        description: 'Fill in annual checklist.',
+        status: 'Todo',
+        priority: 'High',
+        category: 'Security',
+        dueDate: DateTime(now.year, now.month, now.day, 15, 0),
+        assignedToEmail: 'user1@company.com',
+        assignedByEmail: 'pm@company.com',
+      ),
+      TaskRecord(
+        id: 'other-t2',
+        title: 'Other employee secret deliverable',
+        description: 'Should not be seen by user1.',
+        status: 'Todo',
+        priority: 'High',
+        category: 'Private',
+        dueDate: DateTime(now.year, now.month, now.day, 16, 0),
+        assignedToEmail: 'user2@company.com',
+        assignedByEmail: 'pm@company.com',
+      ),
+    ];
+
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: userSession));
+    await tester.pumpAndSettle();
+
+    // Navigate to Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Standard employee should see their deadline
+    expect(find.text('Complete security compliance questionnaire'), findsOneWidget);
+
+    // Standard employee should NOT see other employee's deadline
+    expect(find.text('Other employee secret deliverable'), findsNothing);
+
+    // Standard employee should NOT see workforce attendance metrics
+    expect(find.text('Total Attendees'), findsNothing);
+  });
+
+  testWidgets('api client ensures users on leave are excluded from absent in getAdminDailyReport', (tester) async {
+    final client = HrmApiClient();
+    client.setSessionEmail('admin@company.com');
+
+    final testDay = DateTime(2026, 12, 10);
+    final leave = LeaveRequestRecord(
+      id: 'leave-api-test',
+      userId: 'u-3',
+      userEmail: 'user1@company.com',
+      leaveType: 'Annual',
+      startDate: DateTime(2026, 12, 9),
+      endDate: DateTime(2026, 12, 11),
+      totalDays: 3,
+      reason: 'Vacation',
+      status: LeaveStatus.approved,
+      reviewComment: 'Approved',
+      reviewedByEmail: 'hr@company.com',
+      createdAt: DateTime(2026, 11, 10),
+      reviewedAt: DateTime(2026, 11, 10),
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wn_persisted_leave_requests', jsonEncode([leave.toJson()]));
+
+    final report = await client.getAdminDailyReport(testDay);
+
+    // Verify user1 is marked as onLeave
+    final user1Entry = report.records.firstWhere((r) => r.userEmail == 'user1@company.com');
+    expect(user1Entry.status, AttendanceStatus.onLeave);
+
+    // Verify onLeaveCount is at least 1
+    expect(report.onLeaveCount, greaterThanOrEqualTo(1));
+
+    // Verify absentCount + onLeaveCount + presentCount equals total records
+    expect(report.records.where((r) => r.status == AttendanceStatus.absent).length, report.absentCount);
+    expect(report.records.where((r) => r.status == AttendanceStatus.onLeave).length, report.onLeaveCount);
+    expect(report.absentCount + report.onLeaveCount + report.presentCount + report.lateCount, report.records.length);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -897,6 +1133,8 @@ class _FakeApiClient extends HrmApiClient {
   final bool hasTodayRecord;
   final bool checkedOutToday;
   final AuthSession? fakeRestoredSession;
+  AdminDailyReport? fakeDailyReport;
+  List<TaskRecord>? customTasks;
 
   String? requestedResetEmail;
   String? resetEmail;
@@ -1022,6 +1260,9 @@ class _FakeApiClient extends HrmApiClient {
   @override
   Future<AdminDailyReport> getAdminDailyReport(DateTime date) async {
     adminDailyCalls++;
+    if (fakeDailyReport != null) {
+      return fakeDailyReport!;
+    }
     return AdminDailyReport(
       date: _day,
       records: [
@@ -1246,6 +1487,58 @@ class _FakeApiClient extends HrmApiClient {
     );
     _fakeUsers.insert(0, newUser);
     return newUser;
+  }
+
+  final List<TaskRecord> _fakeTasksList = [];
+
+  @override
+  Future<TaskRecord> assignTask({
+    required String title,
+    required String assigneeUserId,
+    String? assigneeEmail,
+    String? description,
+    String? category,
+    String? priority,
+    DateTime? dueDate,
+  }) async {
+    final task = TaskRecord(
+      id: 'task-${DateTime.now().millisecondsSinceEpoch}',
+      title: title.trim(),
+      description: description ?? '',
+      status: 'Todo',
+      priority: priority ?? 'Medium',
+      category: category ?? 'Projects',
+      dueDate: dueDate,
+      assignedToUserId: assigneeUserId,
+      assignedToEmail: assigneeEmail,
+      createdAt: DateTime.now(),
+    );
+    _fakeTasksList.insert(0, task);
+    return task;
+  }
+
+  @override
+  Future<List<TaskRecord>> getTasks({
+    String? status,
+    String? priority,
+    String? category,
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    return List.of(customTasks ?? _fakeTasksList);
+  }
+
+  @override
+  Future<List<TaskRecord>> getAssignedTasks({
+    String? status,
+    String? priority,
+    String? category,
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    return List.of(customTasks ?? _fakeTasksList);
   }
 
   @override
