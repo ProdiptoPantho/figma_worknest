@@ -1121,6 +1121,95 @@ void main() {
     expect(report.records.where((r) => r.status == AttendanceStatus.onLeave).length, report.onLeaveCount);
     expect(report.absentCount + report.onLeaveCount + report.presentCount + report.lateCount, report.records.length);
   });
+
+  testWidgets('project manager can assign same task to multiple employees at once in task manager', (tester) async {
+    const pmSession = AuthSession(
+      accessToken: 'token-pm',
+      refreshToken: 'refresh-pm',
+      email: 'pm@company.com',
+      roles: ['project manager'],
+      permissions: [],
+    );
+    final api = _FakeApiClient();
+    await tester.binding.setSurfaceSize(const Size(1400, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(WorknestApp(api: api, initialSession: pmSession));
+    await tester.pumpAndSettle();
+
+    // Navigate to Tasks
+    await tester.tap(find.text('Tasks'));
+    await tester.pumpAndSettle();
+
+    // Open Assign Task dialog
+    await tester.tap(find.text('Assign task to employee'));
+    await tester.pumpAndSettle();
+
+    // Verify dialog title
+    expect(find.text('Assign task to employees'), findsOneWidget);
+
+    // Filter employees by typing 'user' in the search bar
+    await tester.enterText(find.byKey(const ValueKey('assign_employee_search_field')), 'user');
+    await tester.pumpAndSettle();
+
+    // Select second employee (user2@company.com) in addition to default user1@company.com
+    await tester.tap(find.byKey(const ValueKey('assign_employee_user2@company.com')));
+    await tester.pumpAndSettle();
+
+    // Verify counter shows 2 selected and button reflects 2 employees
+    expect(find.text('2 selected'), findsOneWidget);
+    expect(find.text('Assign task to 2 employees'), findsOneWidget);
+
+    // Enter Task Title
+    await tester.enterText(
+      find.byKey(const ValueKey('assign_task_title_field')),
+      'Enterprise Security Audit',
+    );
+
+    // Submit dialog
+    await tester.tap(find.byKey(const ValueKey('confirm_assign_task_button')));
+    await tester.pumpAndSettle();
+
+    // Verify success snackbar message
+    expect(find.text('Task "Enterprise Security Audit" assigned to 2 employees successfully.'), findsOneWidget);
+
+    // Verify both assigned tasks appear in the task manager list
+    expect(find.text('Enterprise Security Audit'), findsNWidgets(2));
+    expect(find.textContaining('Assigned to user1@company.com'), findsWidgets);
+    expect(find.textContaining('Assigned to user2@company.com'), findsWidgets);
+  });
+
+  testWidgets('assignTaskToMultiple API client method assigns task to multiple employees with distinct records', (tester) async {
+    final client = HrmApiClient();
+    const assignees = [
+      ApiUser(id: 'u-1', email: 'worker1@company.com', roles: ['employee'], status: 'Active'),
+      ApiUser(id: 'u-2', email: 'worker2@company.com', roles: ['employee'], status: 'Active'),
+      ApiUser(id: 'u-3', email: 'worker3@company.com', roles: ['employee'], status: 'Active'),
+    ];
+
+    final records = await client.assignTaskToMultiple(
+      title: 'Company-Wide Compliance Attestation',
+      assignees: assignees,
+      category: 'Compliance',
+      priority: 'High',
+      description: 'Annual regulatory review',
+    );
+
+    expect(records.length, 3);
+    expect(records.map((r) => r.assignedToEmail).toSet(), {
+      'worker1@company.com',
+      'worker2@company.com',
+      'worker3@company.com',
+    });
+    // Distinct IDs
+    expect(records.map((r) => r.id).toSet().length, 3);
+    // All have same title and priority
+    for (final r in records) {
+      expect(r.title, 'Company-Wide Compliance Attestation');
+      expect(r.priority, 'High');
+      expect(r.category, 'Compliance');
+    }
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -1502,7 +1591,7 @@ class _FakeApiClient extends HrmApiClient {
     DateTime? dueDate,
   }) async {
     final task = TaskRecord(
-      id: 'task-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'task-${DateTime.now().microsecondsSinceEpoch}-${_fakeTasksList.length}',
       title: title.trim(),
       description: description ?? '',
       status: 'Todo',

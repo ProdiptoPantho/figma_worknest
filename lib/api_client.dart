@@ -2444,7 +2444,7 @@ class HrmApiClient {
     }
 
     final fallback = TaskRecord(
-      id: 'task-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'task-${DateTime.now().microsecondsSinceEpoch}-${_assignedTasks.length}',
       title: title.trim(),
       description: description ?? '',
       status: 'Todo',
@@ -2457,6 +2457,30 @@ class HrmApiClient {
     );
     await _saveLocalTask(fallback);
     return fallback;
+  }
+
+  Future<List<TaskRecord>> assignTaskToMultiple({
+    required String title,
+    required List<ApiUser> assignees,
+    String? description,
+    String? category,
+    String? priority,
+    DateTime? dueDate,
+  }) async {
+    final List<TaskRecord> results = [];
+    for (final emp in assignees) {
+      final record = await assignTask(
+        title: title,
+        assigneeUserId: emp.id.isNotEmpty ? emp.id : '6ad3da0e-3b91-4657-85d0-258a29f25df3',
+        assigneeEmail: emp.email,
+        description: description,
+        category: category,
+        priority: priority,
+        dueDate: dueDate,
+      );
+      results.add(record);
+    }
+    return results;
   }
 
   Future<List<TaskRecord>> getAssignedTasks({

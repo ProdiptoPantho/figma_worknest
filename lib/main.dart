@@ -9784,7 +9784,7 @@ class _EmployeeManagementContentState
   Future<void> _openAssignTask(ApiUser user) async {
     final s = widget.session;
     if (s == null) return;
-    final created = await showDialog<EmployeeTask>(
+    final result = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _AssignTaskDialog(
@@ -9793,8 +9793,20 @@ class _EmployeeManagementContentState
         initialEmployee: user,
       ),
     );
-    if (created != null && mounted) {
-      widget.onAction('Task "${created.title}" assigned to ${user.email} successfully.');
+    if (result != null && mounted) {
+      final List<EmployeeTask> createdList = [];
+      if (result is List<EmployeeTask>) {
+        createdList.addAll(result);
+      } else if (result is EmployeeTask) {
+        createdList.add(result);
+      }
+      if (createdList.isNotEmpty) {
+        if (createdList.length == 1) {
+          widget.onAction('Task "${createdList.first.title}" assigned to ${createdList.first.assigneeEmail ?? user.email} successfully.');
+        } else {
+          widget.onAction('Task "${createdList.first.title}" assigned to ${createdList.length} employees successfully.');
+        }
+      }
     }
   }
 
@@ -10903,7 +10915,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
   Future<void> _openAssignTask([ApiUser? preselected]) async {
     final client = widget.api;
     if (client == null) return;
-    final created = await showDialog<EmployeeTask>(
+    final result = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _AssignTaskDialog(
@@ -10912,9 +10924,25 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
         initialEmployee: preselected,
       ),
     );
-    if (created != null && mounted) {
-      setState(() => _tasks.insert(0, created));
-      widget.onAction('Task "${created.title}" assigned to ${created.assigneeEmail ?? 'employee'} successfully.');
+    if (result != null && mounted) {
+      final List<EmployeeTask> createdList = [];
+      if (result is List<EmployeeTask>) {
+        createdList.addAll(result);
+      } else if (result is EmployeeTask) {
+        createdList.add(result);
+      }
+      if (createdList.isNotEmpty) {
+        setState(() {
+          for (final t in createdList.reversed) {
+            _tasks.insert(0, t);
+          }
+        });
+        if (createdList.length == 1) {
+          widget.onAction('Task "${createdList.first.title}" assigned to ${createdList.first.assigneeEmail ?? 'employee'} successfully.');
+        } else {
+          widget.onAction('Task "${createdList.first.title}" assigned to ${createdList.length} employees successfully.');
+        }
+      }
     }
   }
 
@@ -11400,6 +11428,7 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
+  final _searchController = TextEditingController();
   TaskPriority _priority = TaskPriority.high;
   String _category = 'Projects';
   DateTime? _dueDate;
@@ -11407,7 +11436,7 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
   String? _error;
 
   List<ApiUser> _employees = const [];
-  ApiUser? _selectedEmployee;
+  final Set<String> _selectedEmails = <String>{};
   bool _loadingEmployees = true;
 
   @override
@@ -11424,15 +11453,13 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
         _employees = list;
         _loadingEmployees = false;
         if (widget.initialEmployee != null) {
-          _selectedEmployee = list.firstWhere(
-            (u) => u.id == widget.initialEmployee!.id || u.email == widget.initialEmployee!.email,
-            orElse: () => widget.initialEmployee!,
-          );
+          _selectedEmails.add(widget.initialEmployee!.email);
         } else if (list.isNotEmpty) {
-          _selectedEmployee = list.firstWhere(
+          final defaultUser = list.firstWhere(
             (u) => u.email.startsWith('user1'),
             orElse: () => list.first,
           );
+          _selectedEmails.add(defaultUser.email);
         }
       });
     } catch (_) {
@@ -11446,7 +11473,33 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  List<ApiUser> get _selectedUsers =>
+      _employees.where((u) => _selectedEmails.contains(u.email)).toList();
+
+  List<ApiUser> get _filteredEmployees {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _employees;
+    return _employees.where((u) {
+      final emailMatch = u.email.toLowerCase().contains(query);
+      final roleMatch = u.roles.any((r) => r.toLowerCase().contains(query));
+      return emailMatch || roleMatch;
+    }).toList();
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedEmails.addAll(_employees.map((e) => e.email));
+    });
+  }
+
+  void _clearAll() {
+    setState(() {
+      _selectedEmails.clear();
+    });
   }
 
   Future<void> _pickDueDate() async {
@@ -11465,9 +11518,8 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final emp = _selectedEmployee;
-    if (emp == null) {
-      setState(() => _error = 'Please select an employee.');
+    if (_selectedEmails.isEmpty) {
+      setState(() => _error = 'Please select at least one employee.');
       return;
     }
 
@@ -11477,31 +11529,36 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
     });
 
     try {
-      final record = await widget.api.assignTask(
-        title: _titleController.text.trim(),
-        assigneeUserId: emp.id.isNotEmpty ? emp.id : '6ad3da0e-3b91-4657-85d0-258a29f25df3',
-        assigneeEmail: emp.email,
-        description: _descController.text.trim(),
-        category: _category,
-        priority: _priority.label,
-        dueDate: _dueDate,
-      );
+      final selectedList = _selectedUsers;
+      final List<EmployeeTask> createdList = [];
 
-      final task = EmployeeTask(
-        id: record.id,
-        title: record.title,
-        description: record.description,
-        status: TaskState.todo,
-        priority: _priority,
-        category: record.category,
-        dueDate: record.dueDate ?? _dueDate,
-        createdAt: record.createdAt ?? DateTime.now(),
-        assigneeEmail: emp.email,
-        assigneeUserId: emp.id,
-        assignedByEmail: widget.session.email,
-      );
+      for (final emp in selectedList) {
+        final record = await widget.api.assignTask(
+          title: _titleController.text.trim(),
+          assigneeUserId: emp.id.isNotEmpty ? emp.id : '6ad3da0e-3b91-4657-85d0-258a29f25df3',
+          assigneeEmail: emp.email,
+          description: _descController.text.trim(),
+          category: _category,
+          priority: _priority.label,
+          dueDate: _dueDate,
+        );
 
-      if (mounted) Navigator.of(context).pop(task);
+        createdList.add(EmployeeTask(
+          id: record.id,
+          title: record.title,
+          description: record.description,
+          status: TaskState.todo,
+          priority: _priority,
+          category: record.category,
+          dueDate: record.dueDate ?? _dueDate,
+          createdAt: record.createdAt ?? DateTime.now(),
+          assigneeEmail: emp.email,
+          assigneeUserId: emp.id,
+          assignedByEmail: widget.session.email,
+        ));
+      }
+
+      if (mounted) Navigator.of(context).pop(createdList);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -11544,7 +11601,7 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
             ),
             const SizedBox(width: 10),
             Text(
-              'Assign task to employee',
+              'Assign task to employees',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -11554,7 +11611,7 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
           ],
         ),
       content: SizedBox(
-        width: 440,
+        width: 480,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -11576,50 +11633,263 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
                       style: const TextStyle(fontSize: 11, color: Color(0xFFB05B68), fontWeight: FontWeight.w600),
                     ),
                   ),
-                const Text('Assign to employee *', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                _loadingEmployees
-                    ? const LinearProgressIndicator()
-                    : DropdownButtonFormField<ApiUser>(
-                        initialValue: _selectedEmployee,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.person_outline_rounded),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  // Header with counter and Select all / Clear all
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Assign to employees *',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        items: _employees.map((emp) {
-                          final roleLabel = emp.roles.where((r) => r.toLowerCase() != 'user').join(', ');
-                          return DropdownMenuItem<ApiUser>(
-                            value: emp,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    emp.email,
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                if (roleLabel.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      roleLabel,
-                                      style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B)),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (val) => setState(() => _selectedEmployee = val),
-                        validator: (val) => val == null ? 'Select an employee' : null,
                       ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _selectedEmails.isEmpty
+                              ? (isDark ? const Color(0xFF332025) : const Color(0xFFFDECEE))
+                              : (isDark ? const Color(0xFF13322B) : const Color(0xFFE9F8F3)),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _selectedEmails.isEmpty
+                                ? (isDark ? const Color(0xFF6E2833) : const Color(0xFFF8BDC4))
+                                : (isDark ? const Color(0xFF1B5A4B) : const Color(0xFFBAEBDD)),
+                          ),
+                        ),
+                        child: Text(
+                          _selectedEmails.isEmpty ? '0 selected' : '${_selectedEmails.length} selected',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: _selectedEmails.isEmpty
+                                ? (isDark ? const Color(0xFFF77282) : const Color(0xFFC02A3C))
+                                : (isDark ? const Color(0xFF45D0A7) : const Color(0xFF0E7A5A)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: _selectedEmails.length == _employees.length ? _clearAll : _selectAll,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Text(
+                            _selectedEmails.length == _employees.length ? 'Clear all' : 'Select all',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF3568D5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Filter / search field
+                  Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                    ),
+                    child: TextField(
+                      key: const ValueKey('assign_employee_search_field'),
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                        hintText: 'Search employee by email or role...',
+                        hintStyle: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 14),
+                                onPressed: () => setState(() => _searchController.clear()),
+                              )
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                      ),
+                      style: const TextStyle(fontSize: 11.5),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+
+                  // Selected employees chip list
+                  if (_selectedEmails.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 60),
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: _selectedUsers.map((u) {
+                            return Container(
+                              padding: const EdgeInsets.only(left: 8, right: 4, top: 2, bottom: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E3544) : const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: isDark ? const Color(0xFF2B4D63) : const Color(0xFFBFDBFE)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    u.email,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.white : const Color(0xFF1E40AF),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  InkWell(
+                                    onTap: () => setState(() => _selectedEmails.remove(u.email)),
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Icon(
+                                      Icons.close_rounded,
+                                      size: 14,
+                                      color: isDark ? Colors.white70 : const Color(0xFF1E40AF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+
+                  // Scrollable Checklist
+                  if (_loadingEmployees)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: LinearProgressIndicator(),
+                    )
+                  else
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                      child: _filteredEmployees.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text('No employees match filter', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: _filteredEmployees.length,
+                              separatorBuilder: (context, index) => Divider(
+                                height: 1,
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              ),
+                              itemBuilder: (context, index) {
+                                final emp = _filteredEmployees[index];
+                                final isSelected = _selectedEmails.contains(emp.email);
+                                final roleLabel = emp.roles.where((r) => r.toLowerCase() != 'user').join(', ');
+                                final initial = emp.email.isNotEmpty ? emp.email[0].toUpperCase() : 'U';
+
+                                return InkWell(
+                                  key: ValueKey('assign_employee_${emp.email}'),
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedEmails.remove(emp.email);
+                                      } else {
+                                        _selectedEmails.add(emp.email);
+                                      }
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: Checkbox(
+                                            value: isSelected,
+                                            onChanged: (val) {
+                                              setState(() {
+                                                if (val == true) {
+                                                  _selectedEmails.add(emp.email);
+                                                } else {
+                                                  _selectedEmails.remove(emp.email);
+                                                }
+                                              });
+                                            },
+                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        CircleAvatar(
+                                          radius: 11,
+                                          backgroundColor: const Color(0xFF3568D5),
+                                          child: Text(
+                                            initial,
+                                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            emp.email,
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                              color: isDark ? Colors.white : const Color(0xFF103A48),
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (roleLabel.isNotEmpty) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              roleLabel,
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  if (_error != null && _selectedEmails.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Please select at least one employee.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFFB05B68)),
+                      ),
+                    ),
                 const SizedBox(height: 12),
                 TextFormField(
+                  key: const ValueKey('assign_task_title_field'),
                   controller: _titleController,
                   autofocus: true,
                   textInputAction: TextInputAction.next,
@@ -11634,6 +11904,7 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
+                  key: const ValueKey('assign_task_desc_field'),
                   controller: _descController,
                   maxLines: 2,
                   textInputAction: TextInputAction.done,
@@ -11726,18 +11997,30 @@ class _AssignTaskDialogState extends State<_AssignTaskDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
+          key: const ValueKey('confirm_assign_task_button'),
           onPressed: _submitting ? null : _submit,
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFF103A48),
             foregroundColor: Colors.white,
           ),
           child: _submitting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Assigning to ${_selectedEmails.length}...'),
+                  ],
                 )
-              : const Text('Assign task'),
+              : Text(
+                  _selectedEmails.length > 1
+                      ? 'Assign task to ${_selectedEmails.length} employees'
+                      : (_selectedEmails.length == 1 ? 'Assign task (1 employee)' : 'Assign task'),
+                ),
         ),
       ],
     ),
