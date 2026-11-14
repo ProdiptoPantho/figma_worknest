@@ -10653,64 +10653,70 @@ class _TaskManagerContent extends StatefulWidget {
 }
 
 class _TaskManagerContentState extends State<_TaskManagerContent> {
-  final List<EmployeeTask> _tasks = [
-    EmployeeTask(
-      id: 'task-1',
-      title: 'Review and sign updated Employee Handbook 2026',
-      description: 'Review the updated leave policy, remote attendance expectations, and sign digital acknowledgment.',
-      status: TaskState.todo,
-      priority: TaskPriority.high,
-      category: 'Compliance',
-      dueDate: DateTime.now().add(const Duration(days: 2)),
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      assigneeEmail: 'user1@company.com',
-    ),
-    EmployeeTask(
-      id: 'task-2',
-      title: 'Submit timesheet for current bi-weekly sprint',
-      description: 'Ensure all attendance hours and overtime are correctly logged before Monday payroll cutoff.',
-      status: TaskState.inProgress,
-      priority: TaskPriority.medium,
-      category: 'Operations',
-      dueDate: DateTime.now().add(const Duration(days: 1)),
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      assigneeEmail: 'user2@company.com',
-    ),
-    EmployeeTask(
-      id: 'task-3',
-      title: 'Set up two-factor authentication on PeopleHub account',
-      description: 'Add mobile authenticator app as primary 2FA method for security compliance.',
-      status: TaskState.done,
-      priority: TaskPriority.high,
-      category: 'Security',
-      dueDate: DateTime.now().subtract(const Duration(days: 2)),
-      createdAt: DateTime.now().subtract(const Duration(days: 5)),
-      completedAt: DateTime.now().subtract(const Duration(days: 1)),
-      assigneeEmail: 'user3@company.com',
-    ),
-    EmployeeTask(
-      id: 'task-4',
-      title: 'Complete Q4 goal setting and performance self-evaluation',
-      description: 'Draft quarterly deliverables and submit draft to your direct manager for 1:1 review.',
-      status: TaskState.inProgress,
-      priority: TaskPriority.medium,
-      category: 'Goals',
-      dueDate: DateTime.now().add(const Duration(days: 6)),
-      createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      assigneeEmail: 'user1@company.com',
-    ),
-    EmployeeTask(
-      id: 'task-5',
-      title: 'Update emergency contact & beneficiary details',
-      description: 'Verify current phone number, home address, and designated emergency contacts in employee profile.',
-      status: TaskState.todo,
-      priority: TaskPriority.low,
-      category: 'Profile',
-      dueDate: DateTime.now().add(const Duration(days: 14)),
-      createdAt: DateTime.now().subtract(const Duration(days: 4)),
-      assigneeEmail: 'user2@company.com',
-    ),
-  ];
+  static List<EmployeeTask> _buildInitialDefaultTasks() {
+    final now = DateTime.now();
+    return [
+      EmployeeTask(
+        id: 'task-1',
+        title: 'Review and sign updated Employee Handbook 2026',
+        description: 'Review the updated leave policy, remote attendance expectations, and sign digital acknowledgment.',
+        status: TaskState.todo,
+        priority: TaskPriority.high,
+        category: 'Compliance',
+        dueDate: DateTime(now.year, now.month, now.day, 18, 0),
+        createdAt: now.subtract(const Duration(days: 2)),
+        assigneeEmail: 'user1@company.com',
+      ),
+      EmployeeTask(
+        id: 'task-2',
+        title: 'Submit timesheet for current bi-weekly sprint',
+        description: 'Ensure all attendance hours and overtime are correctly logged before Monday payroll cutoff.',
+        status: TaskState.inProgress,
+        priority: TaskPriority.medium,
+        category: 'Operations',
+        dueDate: DateTime(now.year, now.month, now.day + 1, 17, 0),
+        createdAt: now.subtract(const Duration(days: 3)),
+        assigneeEmail: 'user2@company.com',
+      ),
+      EmployeeTask(
+        id: 'task-3',
+        title: 'Set up two-factor authentication on PeopleHub account',
+        description: 'Add mobile authenticator app as primary 2FA method for security compliance.',
+        status: TaskState.done,
+        priority: TaskPriority.high,
+        category: 'Security',
+        dueDate: DateTime(now.year, now.month, now.day - 2, 17, 0),
+        createdAt: now.subtract(const Duration(days: 5)),
+        completedAt: now.subtract(const Duration(days: 1)),
+        assigneeEmail: 'user3@company.com',
+      ),
+      EmployeeTask(
+        id: 'task-4',
+        title: 'Complete Q4 goal setting and performance self-evaluation',
+        description: 'Draft quarterly deliverables and submit draft to your direct manager for 1:1 review.',
+        status: TaskState.inProgress,
+        priority: TaskPriority.medium,
+        category: 'Goals',
+        dueDate: DateTime(now.year, now.month, now.day + 2, 17, 0),
+        createdAt: now.subtract(const Duration(days: 2)),
+        assigneeEmail: 'user1@company.com',
+      ),
+      EmployeeTask(
+        id: 'task-5',
+        title: 'Update emergency contact & beneficiary details',
+        description: 'Verify current phone number, home address, and designated emergency contacts in employee profile.',
+        status: TaskState.todo,
+        priority: TaskPriority.low,
+        category: 'Profile',
+        dueDate: DateTime(now.year, now.month, now.day + 7, 18, 0),
+        createdAt: now.subtract(const Duration(days: 4)),
+        assigneeEmail: 'user2@company.com',
+      ),
+    ];
+  }
+
+  final List<EmployeeTask> _tasks = [];
+  final Set<String> _deletedTaskIds = <String>{};
 
   TaskState? _statusFilter;
   TaskPriority? _priorityFilter;
@@ -10731,7 +10737,24 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
   @override
   void initState() {
     super.initState();
-    _loadLiveTaskData();
+    _initTasks();
+  }
+
+  Future<void> _initTasks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final deleted = prefs.getStringList('wn_persisted_deleted_task_ids') ?? [];
+      _deletedTaskIds.addAll(deleted);
+    } catch (_) {}
+
+    final defaults = _buildInitialDefaultTasks();
+    for (final t in defaults) {
+      if (!_deletedTaskIds.contains(t.id) && !_tasks.any((x) => x.id == t.id)) {
+        _tasks.add(t);
+      }
+    }
+    if (mounted) setState(() {});
+    await _loadLiveTaskData();
   }
 
   TaskState _mapStatus(String? s) {
@@ -10774,7 +10797,9 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
       }
 
       if (remoteTasks.isNotEmpty && mounted) {
-        final mapped = remoteTasks.map((t) {
+        final mapped = remoteTasks
+            .where((t) => !_deletedTaskIds.contains(t.id))
+            .map((t) {
           return EmployeeTask(
             id: t.id,
             title: t.title,
@@ -10793,6 +10818,7 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
         }).toList();
 
         setState(() {
+          _tasks.removeWhere((t) => _deletedTaskIds.contains(t.id));
           for (final m in mapped) {
             _tasks.removeWhere((existing) => existing.id == m.id);
             _tasks.insert(0, m);
@@ -10904,10 +10930,27 @@ class _TaskManagerContentState extends State<_TaskManagerContent> {
           ),
         ],
       ),
-    ).then((confirmed) {
+    ).then((confirmed) async {
       if (confirmed == true && mounted) {
-        setState(() => _tasks.removeWhere((t) => t.id == task.id));
-        widget.onAction('Task deleted.');
+        _deletedTaskIds.add(task.id);
+        if (task.id == 'task-1') _deletedTaskIds.add('seed-task-today-2');
+        if (task.id == 'task-2') _deletedTaskIds.add('seed-task-tmrw-1');
+        if (task.id == 'task-4') _deletedTaskIds.add('seed-task-next-1');
+        if (task.id == 'seed-task-today-2') _deletedTaskIds.add('task-1');
+        if (task.id == 'seed-task-tmrw-1') _deletedTaskIds.add('task-2');
+        if (task.id == 'seed-task-next-1') _deletedTaskIds.add('task-4');
+
+        setState(() => _tasks.removeWhere((t) => _deletedTaskIds.contains(t.id)));
+
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setStringList('wn_persisted_deleted_task_ids', _deletedTaskIds.toList());
+        } catch (_) {}
+
+        await widget.api?.deleteTask(task.id);
+        if (mounted) {
+          widget.onAction('Task "${task.title}" deleted.');
+        }
       }
     });
   }

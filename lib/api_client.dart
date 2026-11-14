@@ -916,6 +916,9 @@ class HrmApiClient {
   static const _persistedReviewedStatusesKey = 'wn_persisted_reviewed_statuses';
   static const _persistedReviewedCommentsKey = 'wn_persisted_reviewed_comments';
   static const _persistedAssignedTasksKey = 'wn_persisted_assigned_tasks';
+  static const _persistedDeletedTaskIdsKey = 'wn_persisted_deleted_task_ids';
+  static const _persistedSeededTasksKey = 'wn_persisted_seeded_tasks_v2';
+  final Set<String> _deletedTaskIds = <String>{};
 
   Map<String, String> get _jsonHeaders => {
     'Content-Type': 'application/json',
@@ -1819,6 +1822,9 @@ class HrmApiClient {
   Future<void> _loadPersistedTasks() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final deleted = prefs.getStringList(_persistedDeletedTaskIdsKey) ?? [];
+      _deletedTaskIds.addAll(deleted);
+
       final tasksJson = prefs.getString(_persistedAssignedTasksKey);
       if (tasksJson != null && tasksJson.isNotEmpty) {
         final decoded = jsonDecode(tasksJson);
@@ -1826,15 +1832,22 @@ class HrmApiClient {
           for (final item in decoded) {
             if (item is Map) {
               final record = TaskRecord.fromJson(Map<String, dynamic>.from(item));
-              if (!_assignedTasks.any((t) => t.id == record.id)) {
+              if (!_deletedTaskIds.contains(record.id) && !_assignedTasks.any((t) => t.id == record.id)) {
                 _assignedTasks.add(record);
               }
             }
           }
         }
       }
+
+      final alreadySeeded = prefs.getBool(_persistedSeededTasksKey) ?? false;
+      if (!alreadySeeded) {
+        _seedDefaultTasksIfEmpty();
+        await prefs.setBool(_persistedSeededTasksKey, true);
+        final serialized = _assignedTasks.map((t) => t.toJson()).toList();
+        await prefs.setString(_persistedAssignedTasksKey, jsonEncode(serialized));
+      }
     } catch (_) {}
-    _seedDefaultTasksIfEmpty();
   }
 
   Future<void> _saveLocalTask(TaskRecord record) async {
@@ -1847,50 +1860,59 @@ class HrmApiClient {
     } catch (_) {}
   }
 
+  Future<void> deleteTask(String taskId) async {
+    await _loadPersistedTasks();
+    _deletedTaskIds.add(taskId);
+
+    // Support legacy alias IDs if any
+    if (taskId == 'task-1') _deletedTaskIds.add('seed-task-today-2');
+    if (taskId == 'task-2') _deletedTaskIds.add('seed-task-tmrw-1');
+    if (taskId == 'task-4') _deletedTaskIds.add('seed-task-next-1');
+    if (taskId == 'seed-task-today-2') _deletedTaskIds.add('task-1');
+    if (taskId == 'seed-task-tmrw-1') _deletedTaskIds.add('task-2');
+    if (taskId == 'seed-task-next-1') _deletedTaskIds.add('task-4');
+
+    _assignedTasks.removeWhere((t) => _deletedTaskIds.contains(t.id));
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_persistedDeletedTaskIdsKey, _deletedTaskIds.toList());
+      final serialized = _assignedTasks.map((t) => t.toJson()).toList();
+      await prefs.setString(_persistedAssignedTasksKey, jsonEncode(serialized));
+    } catch (_) {}
+
+    if (_accessToken != null) {
+      try {
+        await _authorizedRequest(
+          (headers) => _client.delete(
+            Uri.parse('$baseUrl/api/tasks/$taskId'),
+            headers: headers,
+          ).timeout(const Duration(seconds: 4)),
+        );
+      } catch (_) {}
+    }
+  }
+
   void _seedDefaultTasksIfEmpty() {
     if (_assignedTasks.isNotEmpty) return;
     final now = DateTime.now();
-    _assignedTasks.addAll([
+    final defaultTasks = [
       TaskRecord(
-        id: 'seed-task-today-1',
-        title: 'Complete security audit & compliance checklist',
-        description: 'Verify 2FA enforcement and review IAM role permissions.',
-        status: 'In Progress',
-        priority: 'High',
-        category: 'Security',
-        dueDate: DateTime(now.year, now.month, now.day, 17, 0),
-        assignedToEmail: 'user1@company.com',
-        assignedByEmail: 'pm@company.com',
-        createdAt: now.subtract(const Duration(days: 3)),
-      ),
-      TaskRecord(
-        id: 'seed-task-today-2',
+        id: 'task-1',
         title: 'Review and sign updated Employee Handbook 2026',
-        description: 'Sign digital acknowledgment for attendance policy.',
+        description: 'Review the updated leave policy, remote attendance expectations, and sign digital acknowledgment.',
         status: 'Todo',
-        priority: 'Medium',
+        priority: 'High',
         category: 'Compliance',
         dueDate: DateTime(now.year, now.month, now.day, 18, 0),
-        assignedToEmail: 'user2@company.com',
+        assignedToEmail: 'user1@company.com',
         assignedByEmail: 'pm@company.com',
         createdAt: now.subtract(const Duration(days: 2)),
       ),
       TaskRecord(
-        id: 'seed-task-today-3',
-        title: 'Finalize sprint deliverable & release roadmap',
-        description: 'Coordinate cross-functional milestones with engineering lead.',
-        status: 'In Progress',
-        priority: 'High',
-        category: 'Mobile App',
-        dueDate: DateTime(now.year, now.month, now.day, 16, 30),
-        assignedToEmail: 'pm@company.com',
-        assignedByEmail: 'pm@company.com',
-        createdAt: now.subtract(const Duration(days: 1)),
-      ),
-      TaskRecord(
-        id: 'seed-task-tmrw-1',
+        id: 'task-2',
         title: 'Submit timesheet for current bi-weekly sprint',
-        description: 'Ensure all attendance hours and overtime are correctly logged.',
+        description: 'Ensure all attendance hours and overtime are correctly logged before Monday payroll cutoff.',
         status: 'In Progress',
         priority: 'Medium',
         category: 'Operations',
@@ -1900,9 +1922,21 @@ class HrmApiClient {
         createdAt: now.subtract(const Duration(days: 3)),
       ),
       TaskRecord(
-        id: 'seed-task-next-1',
+        id: 'task-3',
+        title: 'Set up two-factor authentication on PeopleHub account',
+        description: 'Add mobile authenticator app as primary 2FA method for security compliance.',
+        status: 'Done',
+        priority: 'High',
+        category: 'Security',
+        dueDate: DateTime(now.year, now.month, now.day, 17, 0),
+        assignedToEmail: 'user3@company.com',
+        assignedByEmail: 'pm@company.com',
+        createdAt: now.subtract(const Duration(days: 5)),
+      ),
+      TaskRecord(
+        id: 'task-4',
         title: 'Complete Q4 goal setting and performance self-evaluation',
-        description: 'Draft quarterly deliverables and submit draft to manager.',
+        description: 'Draft quarterly deliverables and submit draft to your direct manager for 1:1 review.',
         status: 'Todo',
         priority: 'Medium',
         category: 'Goals',
@@ -1911,7 +1945,25 @@ class HrmApiClient {
         assignedByEmail: 'pm@company.com',
         createdAt: now.subtract(const Duration(days: 2)),
       ),
-    ]);
+      TaskRecord(
+        id: 'task-5',
+        title: 'Update emergency contact & beneficiary details',
+        description: 'Verify current phone number, home address, and designated emergency contacts in employee profile.',
+        status: 'Todo',
+        priority: 'Low',
+        category: 'Profile',
+        dueDate: DateTime(now.year, now.month, now.day + 7, 18, 0),
+        assignedToEmail: 'user2@company.com',
+        assignedByEmail: 'pm@company.com',
+        createdAt: now.subtract(const Duration(days: 4)),
+      ),
+    ];
+
+    for (final task in defaultTasks) {
+      if (!_deletedTaskIds.contains(task.id) && !_assignedTasks.any((t) => t.id == task.id)) {
+        _assignedTasks.add(task);
+      }
+    }
   }
 
   Future<void> _persistReview(String requestId, LeaveStatus status, [String? comment]) async {
@@ -2398,9 +2450,9 @@ class HrmApiClient {
       } catch (_) {}
     }
 
-    final all = [..._assignedTasks];
+    final all = _assignedTasks.where((t) => !_deletedTaskIds.contains(t.id)).toList();
     for (final r in remote) {
-      if (!all.any((t) => t.id == r.id)) {
+      if (!_deletedTaskIds.contains(r.id) && !all.any((t) => t.id == r.id)) {
         all.add(r);
       }
     }
@@ -2518,9 +2570,9 @@ class HrmApiClient {
       } catch (_) {}
     }
 
-    final all = [..._assignedTasks];
+    final all = _assignedTasks.where((t) => !_deletedTaskIds.contains(t.id)).toList();
     for (final r in remote) {
-      if (!all.any((t) => t.id == r.id)) {
+      if (!_deletedTaskIds.contains(r.id) && !all.any((t) => t.id == r.id)) {
         all.add(r);
       }
     }
@@ -2639,7 +2691,8 @@ class HrmApiClient {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is String && decoded.trim().isNotEmpty) return decoded.trim();
-      if (decoded is Map<String, dynamic>) {
+      if (decoded is Map) {
+        final decodedMap = Map<String, dynamic>.from(decoded);
         for (final key in const [
           'message',
           'Message',
@@ -2652,11 +2705,11 @@ class HrmApiClient {
           'reason',
           'Reason'
         ]) {
-          final value = decoded[key];
+          final value = decodedMap[key];
           if (value is String && value.trim().isNotEmpty) return value.trim();
         }
-        if (decoded['errors'] is Map) {
-          final errorsMap = decoded['errors'] as Map;
+        if (decodedMap['errors'] is Map) {
+          final errorsMap = decodedMap['errors'] as Map;
           final first = errorsMap.values.firstOrNull;
           if (first is List && first.isNotEmpty) return first.first.toString();
           if (first != null) return first.toString();

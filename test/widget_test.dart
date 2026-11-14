@@ -326,9 +326,13 @@ void main() {
     await tester.tap(find.text('New request'));
     await tester.pumpAndSettle();
 
-    // Select start date
+    // Select start date (select weekday 17)
     await tester.tap(find.text('Select date').first);
     await tester.pumpAndSettle();
+    if (find.text('17').evaluate().isNotEmpty) {
+      await tester.tap(find.text('17').first);
+      await tester.pumpAndSettle();
+    }
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
 
@@ -1210,6 +1214,52 @@ void main() {
       expect(r.category, 'Compliance');
     }
   });
+
+  testWidgets('deleting tasks persists deletion across reload and removes them permanently for all roles', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({});
+    final api = _FakeApiClient();
+
+    await tester.pumpWidget(WorknestApp(api: api));
+    await _signIn(tester);
+
+    // Navigate to Tasks
+    await tester.tap(find.text('Tasks').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review and sign updated Employee Handbook 2026'), findsOneWidget);
+
+    // Delete task-1
+    final deleteButtons = find.byIcon(Icons.delete_outline_rounded);
+    expect(deleteButtons, findsWidgets);
+    await tester.tap(deleteButtons.first);
+    await tester.pumpAndSettle();
+
+    // Confirm deletion dialog
+    expect(find.text('Delete task?'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    // It should now be removed from view
+    expect(find.text('Review and sign updated Employee Handbook 2026'), findsNothing);
+
+    // Reload app with same mock shared preferences
+    await tester.pumpWidget(WorknestApp(api: api));
+    await tester.pumpAndSettle();
+
+    // Navigate to tasks again
+    await tester.tap(find.text('Tasks').first);
+    await tester.pumpAndSettle();
+
+    // Still permanently deleted
+    expect(find.text('Review and sign updated Employee Handbook 2026'), findsNothing);
+  });
 }
 
 class _FakeApiClient extends HrmApiClient {
@@ -1628,6 +1678,13 @@ class _FakeApiClient extends HrmApiClient {
     int pageSize = 50,
   }) async {
     return List.of(customTasks ?? _fakeTasksList);
+  }
+
+  @override
+  Future<void> deleteTask(String taskId) async {
+    _fakeTasksList.removeWhere((t) => t.id == taskId);
+    customTasks?.removeWhere((t) => t.id == taskId);
+    await super.deleteTask(taskId);
   }
 
   @override
